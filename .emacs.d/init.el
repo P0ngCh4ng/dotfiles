@@ -178,9 +178,10 @@
 (setq flycheck-highlighting-mode 'lines  ;; columns symbolsm sexps lines
       flycheck-check-syntax-automatically '(save))
 (leaf exec-path-from-shell
-  :ensure t)
-(exec-path-from-shell-initialize)
-(exec-path-from-shell-copy-env "DEEPL_API_KEY")
+  :ensure t
+  :config
+  (exec-path-from-shell-initialize)
+  (exec-path-from-shell-copy-env "DEEPL_API_KEY"))
 
 (set-language-environment "Japanese")
 ;; ターミナルから呼び出したときにターミナルに
