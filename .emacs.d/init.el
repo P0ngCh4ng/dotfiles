@@ -15,7 +15,7 @@
 (add-to-load-path "elisp" "conf" "public_repos" "themes")
 (load "advance_habits")
 ;;  カスタムファイルを別ファイルにする
-(custom-set-variables '( custom-file(locate-user-emacs-file "custom.el")))
+(setq custom-file (locate-user-emacs-file "custom.el"))
 (set-locale-environment nil)
 (set-language-environment "Japanese")
 (set-terminal-coding-system 'utf-8)
@@ -178,9 +178,10 @@
 (setq flycheck-highlighting-mode 'lines  ;; columns symbolsm sexps lines
       flycheck-check-syntax-automatically '(save))
 (leaf exec-path-from-shell
-  :ensure t)
-(exec-path-from-shell-initialize)
-(exec-path-from-shell-copy-env "DEEPL_API_KEY")
+  :ensure t
+  :config
+  (exec-path-from-shell-initialize)
+  (exec-path-from-shell-copy-env "DEEPL_API_KEY"))
 
 (set-language-environment "Japanese")
 ;; ターミナルから呼び出したときにターミナルに
@@ -198,8 +199,9 @@
 (global-auto-revert-mode t)
 (global-hl-line-mode t)
 (leaf zenburn-theme
-  :ensure t)
-(load-theme 'zenburn)
+  :ensure t
+  :config
+  (load-theme 'zenburn t))
 
 (leaf aggressive-indent
   :ensure t
@@ -459,7 +461,6 @@
 
 (leaf haskell-mode
   :ensure t
-  :after t
   :defvar flycheck-error-list-buffer
   :custom
   (haskell-hoogle-command . nil)
@@ -518,7 +519,6 @@
         (stylish-haskell-disable))))
   :hook (haskell-mode-hook . stylish-haskell-setup))
 (leaf haskell-interactive-mode
-  :after t
   :defvar haskell-interactive-mode-map)
 (leaf haskell-cabal
   :defvar haskell-cabal-mode-map)
