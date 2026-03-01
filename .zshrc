@@ -1,4 +1,4 @@
-echo "Brew and Zplug are required to run this script."
+[[ -o interactive ]] && echo "Brew and Zplug are required to run this script."
 zstyle ":completion:*:commands" rehash 1
 autoload -U zmv
 
@@ -50,8 +50,7 @@ gacp() { git add . && git commit -m "$1" && git push; }
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
-# プラグインの指定_
-
+alias claude='cage -config "$HOME/.config/cage/presets.yaml" claude --dangerously-skip-permissions'
 zplug 'zsh-users/zsh-autosuggestions'
 zplug 'zsh-users/zsh-completions'
 zplug 'zsh-users/zsh-syntax-highlighting'
@@ -70,3 +69,7 @@ zplug load --verbose
 
 
 [ -f "$HOME/.ghcup/env" ] && source "$HOME/.ghcup/env"# ghcup-env export PATH="/opt/homebrew/opt/llvm/bin:$PATH"
+
+
+# Added by Antigravity
+export PATH="/Users/pongchang/.antigravity/antigravity/bin:$PATH"
