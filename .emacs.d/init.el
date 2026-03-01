@@ -1,13 +1,67 @@
+;;; init.el --- Emacs configuration file -*- lexical-binding: t; -*-
+
+;;; Commentary:
+;; Personal Emacs configuration with lexical binding enabled
+
+;;; Code:
+
+;; Suppress byte-compiler warnings for free variables
+(defvar default-buffer-file-coding-system)
+(defvar switch-window-shortcut-style)
+(defvar flycheck-highlighting-mode)
+(defvar flycheck-check-syntax-automatically)
+(defvar exec-path-from-shell-arguments)
+(defvar exec-path-from-shell-check-startup-files)
+(defvar exec-path-from-shell-warn-duration-millis)
+(defvar lsp-language-id-configuration)
+(defvar projectile-globally-ignored-directories)
+(defvar scheme-program-name)
+(defvar haskell-mode-map)
+(defvar gabagefile)
+(defvar worktodofile)
+(defvar todofile)
+(defvar org-habit-show-all-today)
+(defvar org-clock-into-drawer)
+(defvar org-roam-mode-sections)
+(defvar neo-theme)
+(defvar neo-smart-open)
+(defvar projectile-switch-project-action)
+
+;; Emacs 30+ compatibility checks and early performance optimization
+(when (version< emacs-version "26.1")
+  (error "This configuration requires Emacs 26.1 or higher"))
+
+(when (version<= "30.0" emacs-version)
+  (message "Running Emacs 30+: %s" emacs-version))
+
+;; GC最適化: 起動時はGCを抑制し、起動後に戻す
+(setq gc-cons-threshold most-positive-fixnum
+      gc-cons-percentage 0.6)
+
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (setq gc-cons-threshold (* 16 1024 1024)
+                  gc-cons-percentage 0.1)
+            ;; GCメッセージを抑制
+            (setq garbage-collection-messages nil)))
+
+;; ファイル名ハンドラーの一時無効化（起動高速化）
+(defvar my/file-name-handler-alist file-name-handler-alist)
+(setq file-name-handler-alist nil)
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (setq file-name-handler-alist my/file-name-handler-alist)))
+
 ;; load-pathを追加する関数を定義
 
 (defun add-to-load-path (&rest paths)
-  (let (path)
-    (dolist (path paths paths)
-      (let ((default-directory
-	      (expand-file-name (concat user-emacs-directory path))))
-	(add-to-list 'load-path default-directory)
-	(if (fboundp 'normal-top-level-add-subdirs-to-load-path)
-	    (normal-top-level-add-subdirs-to-load-path))))))
+  "Add PATHS to load-path recursively."
+  (dolist (path paths paths)
+    (let ((default-directory
+	    (expand-file-name (concat user-emacs-directory path))))
+      (add-to-list 'load-path default-directory)
+      (if (fboundp 'normal-top-level-add-subdirs-to-load-path)
+	  (normal-top-level-add-subdirs-to-load-path)))))
 (add-to-list 'exec-path (expand-file-name "~/.cargo/bin"))
 
 ;; 引数ディレクトリとそのサブディレクトリをload-pathに追加
@@ -36,71 +90,44 @@
           (expand-file-name
            (file-name-directory (or load-file-name byte-compile-current-file))))))
 
-(eval-and-compile
-  (customize-set-variable
-   'package-archives '(("gnu"   . "https://elpa.gnu.org/packages/")
-                       ("melpa" . "https://melpa.org/packages/")
-                       ("nongnu" . "https://elpa.nongnu.org/nongnu/")
-                       )
-   )
-  (package-initialize)
-  (unless (package-installed-p 'leaf)
-    (package-refresh-contents)
-    (package-install 'leaf))
-  
-  (leaf leaf-keywords
-    :ensure t
-    :init
-    ;; optional packages if you want to use :hydra, :el-get, :blackout,,,
-    (leaf hydra :ensure t)
-    (leaf el-get :ensure t)
-    (leaf blackout :ensure t)
+;; パッケージ管理の初期化
+(require 'package)
+(setq package-archives '(("gnu"   . "https://elpa.gnu.org/packages/")
+                         ("melpa" . "https://melpa.org/packages/")
+                         ("nongnu" . "https://elpa.nongnu.org/nongnu/")))
+(setq package-install-upgrade-built-in t)
+(setq package-check-signature nil)
+(package-initialize)
 
-    :config
-    ;; initialize leaf-keywords.el
-    (leaf-keywords-init))
-  )
+;; use-packageのインストールと設定
+(unless (package-installed-p 'use-package)
+  (package-refresh-contents)
+  (package-install 'use-package))
 
-(leaf leaf-convert
-  :ensure t)
+(require 'use-package)
+(setq use-package-always-ensure t)  ;; 常に:ensure tを適用
 
-(leaf copilot
-  :el-get (copilot
-           :type github
-           :pkgname "zerolfx/copilot.el"
-           )
+;; パッケージリフレッシュを強制実行
+(unless package-archive-contents
+  (package-refresh-contents))
+
+;; Emacs 29+ compatibility: Check for SQLite support (required for org-roam)
+(when (and (version<= "29" emacs-version)
+           (not (fboundp 'sqlite-available-p)))
+  (message "Warning: SQLite support not available in this Emacs build. org-roam may not work."))
+
+;; 基本依存パッケージをインストール
+(use-package f)
+(use-package s)
+(use-package dash)
+(use-package compat)  ;; Emacs 30 compatibility
+
+
+(use-package mozc
+  :ensure t
   :config
-  (leaf editorconfig
-    :ensure t
-    )
-  (leaf s
-    :ensure t
-    )
-  (leaf dash
-    :ensure t
-    )
-  (defun my/copilot-tab ()
-    (interactive)
-    (or (copilot-accept-completion)
-        (indent-for-tab-command)))
-
-  (with-eval-after-load 'copilot
-    (define-key copilot-mode-map (kbd "<tab>") #'my/copilot-tab))
-  )
-(setq copilot-indent-offset-warning-disable t)
-
-(add-hook 'prog-mode-hook 'copilot-mode)
-(with-eval-after-load 'company
-  (define-key company-active-map (kbd "C-TAB") #'my-tab)
-  (define-key company-active-map (kbd "C-<tab>") #'my-tab)
-  (define-key company-mode-map (kbd "C-TAB") #'my-tab)
-  (define-key company-mode-map (kbd "C-<tab>") #'my-tab))
-
-
-(leaf mozc
-  :ensure t)
-(set-language-environment 'Japanese)
-(setq default-input-method "mozc")
+  (set-language-environment 'Japanese)
+  (setq default-input-method "mozc"))
 
 (keyboard-translate ?\C-h ?\C-?)
 (global-set-key (kbd "C-?") 'help-for-help)
@@ -108,12 +135,10 @@
 (define-key global-map [?¥] [?\\])
 (setq inhibit-startup-screen t)
 
-(leaf switch-window
-  :ensure  t
-  :defvar switch-window-shortcut-style
+(use-package switch-window
+  :ensure t
   :config
-  (setq switch-window-shortcut-style 'qwerty)
-  )
+  (setq switch-window-shortcut-style 'qwerty))
 
 (global-set-key (kbd "C-x o") 'switch-window)
 (global-set-key (kbd "C-x 1") 'switch-window-then-maximize)
@@ -131,7 +156,7 @@
 
 (global-set-key (kbd "C-x 4 0") 'switch-window-then-kill-buffer)
 
-(leaf neotree
+(use-package neotree
   :ensure t
   :init
   (setq-default neo-show-hidden-files t))
@@ -150,38 +175,31 @@
   (global-set-key (kbd "s-z") 'undo)
   (global-set-key (kbd "s-+") 'text-scale-adjust)
   (global-set-key (kbd "s--") 'text-scale-adjust))
-(leaf cus-edit
-  :doc "tools for customizing Emacs and Lisp packages"
-  :tag "builtin" "faces" "help"
-  :custom `((custom-file . ,(locate-user-emacs-file "custom.el"))))
+;; cus-editはビルトインパッケージなのでleafを使わず直接設定
+;; custom-fileは既に43行目で設定済みのため、この設定は不要
 
 (defun my/ansi-colorize-buffer ()
   (let ((buffer-read-only nil))
     (ansi-color-apply-on-region (point-min) (point-max))))
 
-(leaf ansi-color
-  :config
-  (add-hook 'compilation-filter-hook 'my/ansi-colorize-buffer)
-  )
+(use-package ansi-color
+  :hook (compilation-filter . my/ansi-colorize-buffer))
 
-(leaf flycheck
-  :doc "On-the-fly syntax checking"
-  :req "dash-2.12.1" "pkg-info-0.4" "let-alist-1.0.4" "seq-1.11" "emacs-24.3"
-  :tag "minor-mode" "tools" "languages" "convenience" "emacs>=24.3"
-  :url "http://www.flycheck.org"
-  :emacs>= 24.3
-  :ensure t
-  :defvar (flycheck-highlighting-mode  flycheck-check-syntax-automatically)
+(use-package flycheck
   :bind (("M-n" . flycheck-next-error)
          ("M-p" . flycheck-previous-error))
-  :global-minor-mode global-flycheck-mode)
-(setq flycheck-highlighting-mode 'lines  ;; columns symbolsm sexps lines
-      flycheck-check-syntax-automatically '(save))
-(leaf exec-path-from-shell
-  :ensure t
+  :init
+  (global-flycheck-mode)
   :config
-  (exec-path-from-shell-initialize)
-  (exec-path-from-shell-copy-env "DEEPL_API_KEY"))
+  (setq flycheck-highlighting-mode 'lines
+        flycheck-check-syntax-automatically '(save)))
+(use-package exec-path-from-shell
+  :if (memq window-system '(mac ns x))
+  :init
+  (setq exec-path-from-shell-arguments '("-l")
+        exec-path-from-shell-check-startup-files nil
+        exec-path-from-shell-warn-duration-millis 1000)
+  (exec-path-from-shell-initialize))
 
 (set-language-environment "Japanese")
 ;; ターミナルから呼び出したときにターミナルに
@@ -198,16 +216,20 @@
 ;; 更新されたファイルを自動的に読み込み直す
 (global-auto-revert-mode t)
 (global-hl-line-mode t)
-(leaf zenburn-theme
-  :ensure t
+(use-package zenburn-theme
+  :init
+  ;; テーマを安全として事前に設定
+  (setq custom-safe-themes t)
   :config
-  (load-theme 'zenburn t))
+  ;; zenburnテーマを即座にロード
+  (load-theme 'zenburn t)
+  (message "Zenburn theme loaded successfully"))
 
-(leaf aggressive-indent
-  :ensure t
-  )
-(global-aggressive-indent-mode 1)
-(leaf quickrun
+(use-package aggressive-indent
+  :config
+  (global-aggressive-indent-mode 1))
+
+(use-package quickrun
   :ensure t)
 ;; paren-mode :対応する括弧を強調して表示する
 (custom-set-variables '(show-paren-delay 0))		;表示までの秒数。　初期値は0.125
@@ -228,87 +250,84 @@
 (setq command-line-default-directory "~/")
 
 (setq-default indent-tabs-mode nil)
-(leaf midnight
+(use-package midnight
   :custom
-  ((clean-buffer-list-delay-general . 1))
+  (clean-buffer-list-delay-general 1)
   :hook
   (emacs-startup-hook . midnight-mode))
 (midnight-delay-set 'midnight-delay "4:30am")
-(leaf uniquify
-  :custom
-  ((uniquify-buffer-name-style . 'post-forward-angle-brackets)
-   (uniquify-min-dir-content   . 1))
-  )
+;; uniquifyはビルトインパッケージ
+(require 'uniquify)
+(setq uniquify-buffer-name-style 'post-forward-angle-brackets)
+(setq uniquify-min-dir-content 1)
 
 ;;総合的なプログラミングの便利ツールの設定
-(leaf lsp-mode
-  :ensure t
-  :hook( (rust-mode . lsp)
+(use-package lsp-mode
 
-         (web-mode-hook . lsp))
-  :custom( (lsp-rust-server 'rust-analyzer))
-  `((lsp-keymap-prefix                  . "C-c l")
-    (lsp-inhibit-message                . t)
-    (lsp-message-project-root-warning   . t)
-    (create-lockfiles                   . nil)
-    (lsp-signature-auto-activate        . t)
-    (lsp-signature-doc-lines            . 1)
-    (lsp-print-performance              . t)
-    (lsp-log-io                         . t)
-    (lsp-eldoc-render-all               . t)
-    (lsp-enable-completion-at-point     . t)
-    (lsp-enable-xref                    . t)
-    (lsp-keep-workspace-alive           . nil)
-    (lsp-enable-snippet                 . t)
-    (lsp-server-trace                   . nil)
-    (lsp-auto-guess-root                . nil)
-    (lsp-document-sync-method           . 'lsp--sync-incremental)
-    (lsp-document-sync-method           . 2)
-    (lsp-diagnostics-provider           . :flycheck)
-    (lsp-response-timeout               . 5)
-    (lsp-idle-delay                     . 0.500)
-    (lsp-enable-file-watchers           . nil)
-    (lsp-completion-provider            . :capf)
-    (lsp-headerline-breadcrumb-segments . '(symbols)))
-  :commands
-  (lsp lsp-deferred)
-  :hook
-  (prog-major-mode . lsp-prog-major-mode-enable)
-  (lsp-mode-hook . lsp-ui-mode)
-  (lsp-mode-hook . lsp-headerline-breadcrumb-mode)
-  :init
-  (leaf lsp-ui
-    :emacs>= 26.1
-    :ensure t
-    :custom
-    ((lsp-ui-doc-enable            . t)
-     (lsp-ui-doc-deley             . 0.5)
-     (lsp-ui-doc-header            . t)
-     (lsp-ui-doc-include-signature . t)
-     (lsp-ui-doc-position          . 'at-point)
-     (lsp-ui-doc-max-width         . 150)
-     (lsp-ui-doc-max-height        . 30)
-     (lsp-ui-doc-use-childframe    . t)
-     (lsp-ui-doc-use-webkit        . t)
-     (lsp-ui-flycheck-enable       . t)
-     ;; lsp-ui-sideline
-     (lsp-ui-sideline-enable       .  t)
-     (lsp-ui-sideline-ignore-duplicate . t)
-     (lsp-ui-sideline-show-symbol  .  t)
-     (lsp-ui-sideline-show-hover   .  t)
-     (lsp-ui-sideline-show-diagnostics . t)
-     (lsp-ui-sideline-show-code-actions . t)
-     
-     ;; lsp-ui-imenu
-     (lsp-ui-imenu-enable . nil)
-     (lsp-ui-imenu-kind-position  . 'top)
-     (lsp-ui-peek-enable           . t)
-     (lsp-ui-peek-peek-height      . 20)
-     (lsp-ui-peek-list-width       . 50)
-     (lsp-ui-peek-fontify          . 'on-demand) ;; never, on-demand, or always
-     )
-    :hook ((lsp-mode-hook . lsp-ui-mode))
-    ))
+  :defer t
+  :hook ((rust-mode . lsp-deferred)
+         (web-mode . lsp-deferred)
+         (lsp-mode . lsp-ui-mode)
+         (lsp-mode . lsp-headerline-breadcrumb-mode))
+  :custom
+  (lsp-rust-server 'rust-analyzer)
+  (lsp-keymap-prefix "C-c l")
+  (lsp-inhibit-message t)
+  (lsp-message-project-root-warning t)
+  (create-lockfiles nil)
+  (lsp-signature-auto-activate t)
+  (lsp-signature-doc-lines 1)
+  (lsp-print-performance nil)
+  (lsp-log-io nil)
+  (lsp-eldoc-render-all t)
+  (lsp-enable-completion-at-point t)
+  (lsp-enable-xref t)
+  (lsp-keep-workspace-alive nil)
+  (lsp-enable-snippet t)
+  (lsp-server-trace nil)
+  (lsp-auto-guess-root nil)
+  (lsp-document-sync-method 'incremental)
+  (lsp-diagnostics-provider :flycheck)
+  (lsp-response-timeout 5)
+  (lsp-idle-delay 0.500)
+  (lsp-enable-file-watchers nil)
+  (lsp-completion-provider :capf)
+  (lsp-headerline-breadcrumb-segments '(symbols))
+  ;; Emacs 30+: パフォーマンス最適化
+  (lsp-lens-enable nil)
+  (lsp-ui-sideline-enable nil)
+  (lsp-modeline-code-actions-enable nil)
+  (lsp-modeline-diagnostics-enable nil)
+  :commands (lsp lsp-deferred))
+
+(use-package lsp-ui
+  :after lsp-mode
+  :custom
+  (lsp-ui-doc-enable            t)
+  (lsp-ui-doc-deley             0.5)
+  (lsp-ui-doc-header            t)
+  (lsp-ui-doc-include-signature t)
+  (lsp-ui-doc-position          'at-point)
+  (lsp-ui-doc-max-width         150)
+  (lsp-ui-doc-max-height        30)
+  (lsp-ui-doc-use-childframe    t)
+  (lsp-ui-doc-use-webkit        t)
+  (lsp-ui-flycheck-enable       t)
+  ;; lsp-ui-sideline (パフォーマンス優先で無効化)
+  (lsp-ui-sideline-enable       nil)
+  (lsp-ui-sideline-ignore-duplicate t)
+  (lsp-ui-sideline-show-symbol  t)
+  (lsp-ui-sideline-show-hover   t)
+  (lsp-ui-sideline-show-diagnostics t)
+  (lsp-ui-sideline-show-code-actions t)
+  ;; lsp-ui-imenu
+  (lsp-ui-imenu-enable nil)
+  (lsp-ui-imenu-kind-position  'top)
+  (lsp-ui-peek-enable           t)
+  (lsp-ui-peek-peek-height      20)
+  (lsp-ui-peek-list-width       50)
+  (lsp-ui-peek-fontify          'on-demand)
+  :hook (lsp-mode . lsp-ui-mode))
 (with-eval-after-load 'lsp-mode
   (add-to-list 'lsp-language-id-configuration
                '(dockerfile-mode . "dockerfile"))
@@ -316,65 +335,72 @@
    (make-lsp-client :new-connection (lsp-stdio-connection "docker-langserver")
                     :major-modes '(dockerfile-mode)
                     :server-id 'dockerfile-ls)))
-(leaf go-translate
-  :ensure t
-  :bind ("C-c t" . gts-do-translate)
+
+(use-package company
+
+  :defer t
+  :hook (after-init-hook . global-company-mode)
+  :custom
+  (company-idle-delay 0.1)
+  (company-minimum-prefix-length 2)
+  (company-selection-wrap-around t)
+  ;; Emacs 30+: 補完パフォーマンス向上
+  (company-tooltip-align-annotations t)
+  (company-transformers '(company-sort-by-occurrence))) 
+
+
+
+(use-package helm
+
+  :defer t
+  :bind (("C-c h" . helm-command-prefix)
+         ("M-x" . helm-M-x)
+         ("M-y" . helm-show-kill-ring)
+         ("C-x b" . helm-mini))
+  :custom
+  ;; Emacs 30+: helmパフォーマンス向上
+  (helm-mode-fuzzy-match t)
+  (helm-completion-in-region-fuzzy-match t)
+  (helm-candidate-number-limit 100)
+  (helm-buffer-max-length 40)
   :config
-  (setq gts-translate-list '(("en" "ja") ("ja" "en")))
-  (setq gts-default-translator
-	(gts-translator
-	 :picker (gts-noprompt-picker)
-	 :engines (list
-		   (gts-deepl-engine
-                    :auth-key (getenv "DEEPL_API_KEY") :pro nil) ;; CHANGEME
-		   (gts-google-engine)
-		   (gts-bing-engine))
- 	 :render (gts-buffer-render)))
-  )
+  (helm-mode 1))
+(use-package projectile
 
-
-(leaf company
-  :ensure t)
-(global-company-mode) ; 全バッファで有効にする 
-
-
-
-(leaf helm
-  :ensure t
-  )
-
-(global-set-key (kbd "C-c h") 'helm-command-prefix)
-(global-set-key (kbd "M-x") 'helm-M-x)
-
-(global-set-key (kbd "M-y") 'helm-show-kill-ring)
-(global-set-key (kbd "C-x b") 'helm-mini)
-(helm-mode 1)
-(leaf projectile
-  :bind
-  ("s-p" . projectile-command-map)
-  :init
+  :defer t
+  :bind ("s-p" . projectile-command-map)
+  :hook (after-init-hook . projectile-mode)
+  :custom
+  (projectile-indexing-method 'hybrid)
+  (projectile-enable-caching t)
+  ;; Emacs 30+: パフォーマンス向上
+  (projectile-git-use-fd t)
+  (projectile-use-git-grep t)
   :config
-  (setq projectile-indexing-method 'hybrid)
   (add-to-list 'projectile-globally-ignored-directories "*node_modules")
   (add-to-list 'projectile-globally-ignored-directories "*dist")
-  (progn
-    (projectile-mode 1)
-    ))
+  (add-to-list 'projectile-globally-ignored-directories "*.elc")
+  (add-to-list 'projectile-globally-ignored-directories "*elpa"))
 
 
-(leaf helm-projectile
+(use-package helm-projectile
   :ensure t)
 
 
-(leaf magit
-  :ensure t)
-(leaf magit-delta
-  :ensure t
+(use-package magit
+
+  :defer t
+  :bind (("C-x g" . magit-status))
+  :custom
+  ;; Emacs 30+: パフォーマンス向上
+  (magit-refresh-status-buffer t)
+  (magit-diff-refine-hunk 'all))
+
+(use-package magit-delta
+
   :after magit
   :hook (magit-mode-hook))
 
-(leaf aggressive-indent
-  :ensure t)
 ;;言語ごとの設定
 
 (setq process-coding-system-alist
@@ -400,10 +426,9 @@
 (define-key global-map "\C-cS" 'scheme-other-window)
 
 
-(leaf web-mode
-  :ensure t
+(use-package web-mode
+
   :after flycheck
-  :defun flycheck-add-mode
   :mode (("\\.html?\\'" . web-mode)
          ("\\.scss\\'" . web-mode)
          ("\\.css\\'" . web-mode)
@@ -412,60 +437,60 @@
          ("\\.js\\'" . web-mode)
          ("\\.ts\\'" . web-mode)
          ("\\.tsx\\'" . web-mode)
-         )
-  
+         ("\\.blade\\.php\\'" . web-mode)
+         ("\\.phtml\\'" . web-mode))
+
   :config
-  (flycheck-add-mode 'javascript-eslint 'web-mode)  
+  (flycheck-add-mode 'javascript-eslint 'web-mode)
   :custom
-  (web-mode-engines-alist . '(("php"    . "\\.phtml\\'")))
-  (web-mode-markup-indent-offset . 2)
-  (web-mode-css-indent-offset . 2)
-  (web-mode-code-indent-offset . 2)
-  (web-mode-comment-style . 2)
-  (web-mode-style-padding . 1)
-  (web-mode-script-padding . 1)
+  (web-mode-engines-alist '(("blade" . "\\.blade\\.php\\'")
+                            ("php"   . "\\.phtml\\'")))
+  (web-mode-markup-indent-offset 2)
+  (web-mode-css-indent-offset 2)
+  (web-mode-code-indent-offset 2)
+  (web-mode-comment-style 2)
+  (web-mode-style-padding 1)
+  (web-mode-script-padding 1)
   )
 
-(leaf php-mode
-  :ensure t
+(use-package php-mode
+
   )
-(eval-when-compile
-  (el-get-bundle 'web-php-blade-mode
-    :url "https://github.com/takeokunn/web-php-blade-mode.git"))
 
 
+(use-package rust-mode
 
-(add-to-list 'load-path (locate-user-emacs-file "el-get/web-php-blade-mode"))
-
-(leaf rust-mode
-  :ensure t
-  :leaf-defer t
-  :config
-  (setq-default rust-format-on-save t))
-(leaf cargo
-  :ensure t
-  :hook (rust-mode . cargo-minor-mode))
-
-(leaf prettier-js
-  :ensure t)
-(add-hook 'js-mode-hook 'prettier-js-mode)
-
-(add-hook 'web-mode-hook 'prettier-js-mode)
-(add-hook 'js-mode-hook
-          (lambda ()
-            (add-hook 'after-save-hook 'prettier t t)))
-
-
-(leaf python-mode
-  :ensure t)
-
-(leaf haskell-mode
-  :ensure t
-  :defvar flycheck-error-list-buffer
+  :defer t
   :custom
-  (haskell-hoogle-command . nil)
-  (haskell-hoogle-url . "https://www.stackage.org/lts/hoogle?q=%s")
+  (rust-format-on-save t)
+  ;; Emacs 30+: rust-analyzerと連携
+  (rust-format-show-buffer nil))
+
+(use-package cargo
+
+  :defer t
+  :hook (rust-mode-hook . cargo-minor-mode))
+
+(use-package prettier-js
+  :ensure t
+  :config
+  (add-hook 'js-mode-hook 'prettier-js-mode)
+  (add-hook 'web-mode-hook 'prettier-js-mode)
+  (add-hook 'js-mode-hook
+            (lambda ()
+              (add-hook 'after-save-hook 'prettier t t))))
+
+
+(use-package python-mode
+  :ensure t)
+
+(use-package haskell-mode
+
+  :custom
+  (haskell-hoogle-command nil)
+  (haskell-hoogle-url "https://www.stackage.org/lts/hoogle?q=%s")
   :init
+  (defvar flycheck-error-list-buffer)
   (defun haskell-repl-and-flycheck ()
     (interactive)
     (delete-other-windows)
@@ -475,7 +500,7 @@
     (other-window 1)
     (switch-to-buffer flycheck-error-list-buffer)
     (other-window 1))
-  :bind (:haskell-mode-map
+  :bind (:map haskell-mode-map
          ("M-i" . stylish-haskell-toggle)
          ("C-M-z" . haskell-repl-and-flycheck)
          ("C-c C-b" . haskell-hoogle)
@@ -487,20 +512,20 @@
   (add-to-list 'safe-local-variable-values '(haskell-indent-spaces . 2))
   (add-to-list 'safe-local-variable-values '(haskell-process-use-ghci . t)))
 
-(leaf lsp-haskell
-  :ensure t
+(use-package lsp-haskell
+
   :hook (haskell-mode-hook . lsp)
-  :defvar (lsp-haskell-formatting-provider lsp-haskell-server-path)
+  :init
+  (defvar lsp-haskell-formatting-provider)
+  (defvar lsp-haskell-server-path)
   :config
   (setq lsp-haskell-formatting-provider "fourmolu")
   (setq lsp-haskell-server-path "haskell-language-server-wrapper")
-  :defun
-  lsp-code-actions-at-point
-  lsp:code-action-title
   )
-(leaf haskell-customize
-  :defvar haskell-stylish-on-save
+(use-package haskell-customize
+  :after haskell-mode
   :init
+  (defvar haskell-stylish-on-save)
   (eval-and-compile
     (defun stylish-haskell-enable ()
       "保存したときに自動的にstylish-haskellを適用する。"
@@ -518,20 +543,23 @@
           (stylish-haskell-enable)
         (stylish-haskell-disable))))
   :hook (haskell-mode-hook . stylish-haskell-setup))
-(leaf haskell-interactive-mode
-  :defvar haskell-interactive-mode-map)
-(leaf haskell-cabal
-  :defvar haskell-cabal-mode-map)
+(use-package haskell-interactive-mode
+  :after haskell-mode
+  :init
+  (defvar haskell-interactive-mode-map))
+(use-package haskell-cabal
+  :after haskell-mode
+  :init
+  (defvar haskell-cabal-mode-map))
 
 (put 'dired-find-alternate-file 'disabled nil)
 
 
 
 
-(leaf org
-  :doc "Export Framework for Org Mode"
-  :tag "gnu"
-  :added "2023-05-29")
+(use-package org
+  ;; Export Framework for Org Mode
+  )
 ;; Org-captureの設定
 
 ;; Org-captureを呼び出すキーシーケンス
@@ -540,9 +568,11 @@
 (setq gabagefile (concat (getenv "HOME") "/org/gabage.org"))
 (setq worktodofile (concat (getenv "HOME") "/org/worktodo.org"))
 (setq todofile (concat (getenv "HOME") "/org/todo.org"))
-(leaf org-capture
+(use-package org-capture
+  :after org
   :commands org-capture
-  :defvar org-capture-templates
+  :init
+  (defvar org-capture-templates)
   :config
   (setq org-capture-templates
         '(("w" "WorkTodo" entry (file+headline worktodofile "workTODO")
@@ -573,32 +603,38 @@
   (find-file (concat "~/p0ngch4ng.github.io/posts/" name ".md"))
   )
 (global-set-key (kbd "C-c f b") 'make-new-blog-file)
-(leaf org-roam
-  :emacs>= 26.1
+(use-package org-roam
+  ;; Requires Emacs >= 26.1
   :bind
-  (   ("C-c n c" . org-roam-node-find)
-      ("C-c n i" . org-roam-node-insert)      
-      ("C-c n l" . org-roam-buffer-toggle)
-      (:org-mode-map
-       ("C-M-i"   . completion-at-point)))  
-  :ensure t
-  :require t
+  (("C-c n c" . org-roam-node-find)
+   ("C-c n i" . org-roam-node-insert)
+   ("C-c n l" . org-roam-buffer-toggle)
+   (:map org-mode-map
+    ("C-M-i" . completion-at-point)))
+
+  :defer t
   :custom
-    `((org-roam-db-location . ,(expand-file-name "org-roam.db" "~/.emacs.d/"))
-    (org-roam-directory   . "~/org/notes/")
-    (org-roam-graph-executable .  "/opt/homebrew/bin/dot")
-    (org-roam-complete-everywhere . t))
-  )
+  (org-roam-db-location (expand-file-name "org-roam.db" "~/.emacs.d/"))
+  (org-roam-directory "~/org/notes/")
+  (org-roam-graph-executable "/opt/homebrew/bin/dot")
+  (org-roam-complete-everywhere t)
+  ;; v2.2.0以降ではdatabase-connectorは不要（自動検出）
+  (org-roam-v2-ack t)
+  :config
+  ;; org-roamのデータベースを遅延初期化
+  (org-roam-db-autosync-mode))
 
 (setq org-habit-show-all-today t)
 (setq org-clock-into-drawer t)
 
-(leaf org-journal
-  :ensure t
-  :require t
+(use-package org-journal
+
+  :defer t
   :custom
-  (org-journal-dir .  "~/org/journal/")
-  )
+  (org-journal-dir "~/org/journal/")
+  ;; Emacs 30+: ファイル検索の最適化
+  (org-journal-file-type 'daily)
+  (org-journal-date-format "%Y-%m-%d"))
 
 
 
@@ -609,31 +645,29 @@
             ))
 
 
+;; Emacs 30.2: Enhanced display-buffer configuration
 (add-to-list 'display-buffer-alist
              '("\\*org-roam\\*"
                (display-buffer-in-direction)
                (direction . right)
                (window-width . 0.33)
-               (window-height . fit-window-to-buffer)))
+               (window-height . fit-window-to-buffer)
+               (preserve-size . (t . nil))))
 
-(leaf beacon
+(use-package beacon
   :ensure t
   :custom
-  `((beacon-color              . "#aa3400")
-    ;; (beacon-size               . 64)
-    (beacon-blink-when-focused . t)
-    )
+  (beacon-color "#aa3400")
+  ;; (beacon-size 64)
+  (beacon-blink-when-focused t)
   :custom-face
-  `((beacon-fallback-background . '((t (:background "#556b2f")))))
+  (beacon-fallback-background ((t (:background "#556b2f"))))
   :config
   (beacon-mode 1)
   )
 
 
-(leaf neotree
-  :ensure t
-  )
-(leaf all-the-icons
+(use-package all-the-icons
   :ensure t)
 (setq neo-theme (if (display-graphic-p) 'icons 'arrow))
 (setq neo-smart-open t)
@@ -644,12 +678,6 @@
   (org-agenda-clockreport-mode)   ; inactiveなエントリーも表示
   (get-buffer "*Org Agenda*")         ; バッファを返す必要がある
   )
-
-(leaf midnight
-  :custom
-  ((clean-buffer-list-delay-general . 1))
-  :hook
-  (emacs-startup-hook . midnight-mode))
 
 
 
@@ -676,5 +704,21 @@
 
 
 
-(leaf dockerfile-mode
-  :ensure t)
+(use-package dockerfile-mode
+)
+
+;; Emacs 30+ Post-initialization diagnostics
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (message "=== Emacs 30+ Compatibility Report ===")
+            (message "Emacs version: %s" emacs-version)
+            (message "SQLite support: %s" (if (fboundp 'sqlite-available-p) "Available" "Not available"))
+            (message "Native compilation: %s" (if (and (fboundp 'native-comp-available-p)
+                                                       (native-comp-available-p))
+                                                  "Enabled" "Disabled"))
+            (message "Package count: %d" (length package-activated-list))
+            (message "Startup time: %.2fs" (float-time (time-subtract after-init-time before-init-time)))
+            (message "===================================")))
+
+(provide 'init)
+;;; init.el ends here
