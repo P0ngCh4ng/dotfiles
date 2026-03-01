@@ -48,6 +48,49 @@ The dotfiles system uses a symbolic linking approach where configuration files a
 - UTF-8 encoding setup with Japanese language environment
 - Custom load-path management for extensibility
 
+#### Automated Verification Workflow
+When modifying Emacs configuration files (`init.el`, elisp files):
+1. **Always backup first**: `cp ~/.emacs.d/init.el ~/.emacs.d/init.el.backup.$(date +%Y%m%d_%H%M%S)`
+2. **After editing, run comprehensive verification**:
+   - Syntax check via batch mode
+   - **Runtime verification**: Actually launch Emacs and capture all errors/warnings
+   - Check `*Messages*` buffer for warnings
+   - Verify byte-compilation output
+3. **Parse and analyze ALL warnings and errors** - not just syntax errors but also:
+   - Runtime errors (undefined functions, wrong arguments, etc.)
+   - Warnings (obsolete functions, deprecated features, etc.)
+   - Package loading issues
+   - Compilation warnings
+4. **Automatically fix ALL issues** found in verification
+5. **Iterate until ALL warnings and errors are resolved** - do not stop until completely clean
+6. **Only confirm completion** when Emacs starts without any errors or warnings
+
+#### Verification Commands (Execute ALL)
+- Basic syntax check: `emacs --batch -l ~/.emacs.d/init.el 2>&1`
+- **Runtime test**: `emacs --eval "(run-with-timer 3 nil #'kill-emacs)" 2>&1` (capture stderr/stdout)
+- Byte-compile validation: `emacs --batch --eval "(byte-compile-file \"~/.emacs.d/init.el\")" 2>&1`
+- Package verification: `emacs --batch --eval "(progn (require 'package) (package-initialize))" 2>&1`
+- **Messages buffer check**: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (with-current-buffer \"*Messages*\" (princ (buffer-string))))" 2>&1`
+
+#### Error Handling Protocol
+- **Capture BOTH stderr and stdout** (use `2>&1`) to catch all warnings/errors
+- **Parse ALL messages** including:
+  - Error messages (syntax, runtime, loading errors)
+  - Warning messages (obsolete functions, deprecated variables)
+  - Compilation warnings (unused variables, undefined functions)
+  - Package-related warnings
+- **Common issues to auto-fix**:
+  - Missing packages → install via package-install
+  - Syntax errors (quotes, parentheses) → correct syntax
+  - Undefined functions → add missing `require` statements
+  - Obsolete functions → replace with modern equivalents
+  - Deprecated variables → update to new variable names
+  - Wrong number of arguments → fix function calls
+  - Unbalanced parentheses → balance properly
+- **Use TodoWrite** to track: backup → edit → verify → fix ALL errors → fix ALL warnings → re-verify loop
+- **CRITICAL**: Never mark task complete until Emacs runs without ANY errors OR warnings
+- **CRITICAL**: "Clean" means ZERO errors and ZERO warnings - not just "no fatal errors"
+
 ### Package Management
 - Homebrew dependencies defined in Brewfile
 - Includes development tools: jq, lsd, mysql, volta, emacs
