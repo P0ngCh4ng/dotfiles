@@ -1,0 +1,23 @@
+(custom-set-variables
+ ;; custom-set-variables was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(custom-file (locate-user-emacs-file "custom.el"))
+ '(custom-safe-themes
+   '("09b833239444ac3230f591e35e3c28a4d78f1556b107bafe0eb32b5977204d93" "f74e8d46790f3e07fbb4a2c5dafe2ade0d8f5abc9c203cd1c29c7d5110a85230" "2dc03dfb67fbcb7d9c487522c29b7582da20766c9998aaad5e5b63b5c27eec3f" default))
+ '(default-tab-width 4)
+ '(flycheck-disabled-checkers '(emacs-lisp-checkdoc))
+ '(initial-buffer-choice 'my-initial-buffer)
+ '(package-selected-packages
+   '(claude-code multi-vterm ellama dockerfile-mode graphviz-dot-mode yaml-mode xah-fly-keys docker org-journal dotenv-mode all-the-icons go-translate yaml hindent package-utils svg-lib org-roam-ui beacon org-roam lsp-haskell haskell-mode python-mode prettier-js cargo rust-mode php-mode web-mode magit-delta magit helm-projectile helm company lsp-ui lsp-mode quickrun aggressive-indent zenburn-theme exec-path-from-shell flycheck neotree switch-window blackout el-get hydra leaf-keywords leaf))
+ '(package-vc-selected-packages
+   '((claude-code :url "https://github.com/stevemolitor/claude-code.el")))
+ '(show-paren-delay 0)
+ '(show-paren-style 'expression))
+(custom-set-faces
+ ;; custom-set-faces was added by Custom.
+ ;; If you edit it by hand, you could mess it up, so be careful.
+ ;; Your init file should contain only one such instance.
+ ;; If there is more than one, they won't work right.
+ '(beacon-fallback-background ((t (:background "#556b2f"))) nil "Customized with leaf in `beacon' block at `/Users/pongchang/.emacs.d/init.el'"))
