@@ -1,0 +1,17 @@
+presets:
+  claude-code:
+    allow:
+      - "."
+      - "$HOME/.config/claude"
+      - "$HOME/tmp"
+      - path: "/tmp"
+        eval-symlinks: true
+      - "$HOME/.claude"
+      - "$HOME/.npm"
+      - "$HOME/.claude.json"
+    allow-keychain: true
+
+auto-presets:
+  - command: claude
+    presets:
+      - claude-code
