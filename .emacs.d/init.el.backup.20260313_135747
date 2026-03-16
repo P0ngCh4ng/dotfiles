@@ -17,38 +17,15 @@
 (defvar projectile-globally-ignored-directories)
 (defvar scheme-program-name)
 (defvar haskell-mode-map)
-(defvar my-gabagefile)
-(defvar my-worktodofile)
-(defvar my-todofile)
+(defvar gabagefile)
+(defvar worktodofile)
+(defvar todofile)
 (defvar org-habit-show-all-today)
 (defvar org-clock-into-drawer)
-(defvar org-capture-templates)
-(defvar org-refile-targets)
 (defvar org-roam-mode-sections)
 (defvar neo-theme)
 (defvar neo-smart-open)
 (defvar projectile-switch-project-action)
-
-;; Declare functions from external packages to suppress byte-compile warnings
-(declare-function global-flycheck-mode "flycheck")
-(declare-function flycheck-add-mode "flycheck")
-(declare-function exec-path-from-shell-initialize "exec-path-from-shell")
-(declare-function global-aggressive-indent-mode "aggressive-indent")
-(declare-function lsp-register-client "lsp-mode")
-(declare-function make-lsp-client "lsp-mode")
-(declare-function lsp-stdio-connection "lsp-mode")
-(declare-function helm-mode "helm")
-(declare-function claude-code-mode "claude-code")
-(declare-function beacon-mode "beacon")
-(declare-function org-agenda-clockreport-mode "org-agenda")
-(declare-function org-roam-db-autosync-mode "org-roam")
-(declare-function org-roam-backlinks-section "org-roam")
-(declare-function org-roam-reflinks-section "org-roam")
-(declare-function stylish-haskell-enable "stylish-haskell")
-(declare-function stylish-haskell-disable "stylish-haskell")
-(declare-function org-at-heading-p "org")
-(declare-function org-schedule "org")
-(declare-function ansi-color-apply-on-region "ansi-color")
 
 ;; Emacs 30+ compatibility checks and early performance optimization
 (when (version< emacs-version "26.1")
@@ -388,12 +365,6 @@
   (helm-buffer-max-length 40)
   :config
   (helm-mode 1))
-
-;; Fix helm-grep-match face warnings (must be after helm loads)
-(with-eval-after-load 'helm
-  (set-face-attribute 'helm-grep-match nil
-                      :foreground 'unspecified
-                      :background 'unspecified))
 (use-package projectile
 
   :defer t
@@ -415,18 +386,6 @@
 (use-package helm-projectile
   :ensure t)
 
-;; vterm: 高性能ターミナルエミュレータ
-(use-package vterm
-  :ensure t
-  :custom
-  (vterm-max-scrollback 10000)
-  (vterm-buffer-name-string "vterm %s"))
-
-;; Claude Code integration
-(use-package claude-code
-  :after vterm
-  :config
-  (claude-code-mode 1))
 
 (use-package magit
 
@@ -563,27 +522,35 @@
   (setq lsp-haskell-formatting-provider "fourmolu")
   (setq lsp-haskell-server-path "haskell-language-server-wrapper")
   )
-;; haskell-customize, haskell-interactive-mode, haskell-cabal are built-in to haskell-mode
-(with-eval-after-load 'haskell-mode
+(use-package haskell-customize
+  :after haskell-mode
+  :init
   (defvar haskell-stylish-on-save)
-  (defvar haskell-interactive-mode-map)
-  (defvar haskell-cabal-mode-map)
-  (defun stylish-haskell-enable ()
-    "保存したときに自動的にstylish-haskellを適用する。"
-    (interactive)
-    (setq-local haskell-stylish-on-save t))
-  (defun stylish-haskell-disable ()
-    (interactive)
-    (setq-local haskell-stylish-on-save nil))
-  (defun stylish-haskell-toggle ()
-    (interactive)
-    (setq-local haskell-stylish-on-save (not haskell-stylish-on-save)))
-  (defun stylish-haskell-setup ()
-    "プロジェクトディレクトリにstylish-haskellの設定ファイルがある場合、保存したときに自動的にstylish-haskellを適用する。"
-    (if (locate-dominating-file default-directory ".stylish-haskell.yaml")
-        (stylish-haskell-enable)
-      (stylish-haskell-disable)))
-  (add-hook 'haskell-mode-hook 'stylish-haskell-setup))
+  (eval-and-compile
+    (defun stylish-haskell-enable ()
+      "保存したときに自動的にstylish-haskellを適用する。"
+      (interactive)
+      (setq-local haskell-stylish-on-save t))
+    (defun stylish-haskell-disable ()
+      (interactive)
+      (setq-local haskell-stylish-on-save nil))
+    (defun stylish-haskell-toggle ()
+      (interactive)
+      (setq-local haskell-stylish-on-save (not haskell-stylish-on-save)))
+    (defun stylish-haskell-setup ()
+      "プロジェクトディレクトリにstylish-haskellの設定ファイルがある場合、保存したときに自動的にstylish-haskellを適用する。"
+      (if (locate-dominating-file default-directory ".stylish-haskell.yaml")
+          (stylish-haskell-enable)
+        (stylish-haskell-disable))))
+  :hook (haskell-mode-hook . stylish-haskell-setup))
+(use-package haskell-interactive-mode
+  :after haskell-mode
+  :init
+  (defvar haskell-interactive-mode-map))
+(use-package haskell-cabal
+  :after haskell-mode
+  :init
+  (defvar haskell-cabal-mode-map))
 
 (put 'dired-find-alternate-file 'disabled nil)
 
@@ -598,19 +565,23 @@
 ;; Org-captureを呼び出すキーシーケンス
 (define-key global-map "\C-cc" 'org-capture)
 ;; Org-captureのテンプレート（メニュー）の設定
-(setq my-gabagefile (concat (getenv "HOME") "/org/gabage.org"))
-(setq my-worktodofile (concat (getenv "HOME") "/org/worktodo.org"))
-(setq my-todofile (concat (getenv "HOME") "/org/todo.org"))
-;; org-capture is built-in to org
-(with-eval-after-load 'org
-  (require 'org-capture)
+(setq gabagefile (concat (getenv "HOME") "/org/gabage.org"))
+(setq worktodofile (concat (getenv "HOME") "/org/worktodo.org"))
+(setq todofile (concat (getenv "HOME") "/org/todo.org"))
+(use-package org-capture
+  :after org
+  :commands org-capture
+  :init
+  (defvar org-capture-templates)
+  :config
   (setq org-capture-templates
-        '(("w" "WorkTodo" entry (file+headline my-worktodofile "workTODO")
+        '(("w" "WorkTodo" entry (file+headline worktodofile "workTODO")
 	   "* TODO %?\n %i\n %a")
-	  ("g" "Gabage" entry (file+headline my-gabagefile "gabage")
+	  ("g" "Gabage" entry (file+headline gabagefile "gabage")
 	   "*  Gabage %?\n %U\n %i\n %a")
-          ("t" "Todo" entry (file+headline my-todofile "TODO")
-           "* TODO %?\n %U\n %i\n %a"))))
+          ("t" "Todo" entry (file+headline todofile "TODO")
+           "* TODO %?\n %U\n %i\n %a")
+          )))
 ;; メモをC-M-^一発で見るための設定
 ;; https://qiita.com/takaxp/items/0b717ad1d0488b74429d から拝借
 (defun show-org-buffer (file)
@@ -713,8 +684,7 @@
 
 
 (defun my/advance-todos-schedule-from-today (time-string)
-  "Interactively advance the schedule time of TODOs from today's TIME-STRING.
-Advances TODOs with names and seconds in TODO-NAMES-SECONDS."
+  "Interactively advance the schedule time of the TODOs with names and seconds in TODO-NAMES-SECONDS from today's TIME-STRING."
   (interactive "sEnter time (HH:MM:SS): ")
   (let* ((date-string (format-time-string "%Y-%m-%d"))
          (time-string (concat date-string " " time-string))
