@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# emacs-auto-fix: Automatically fix common Emacs configuration errors
+#
+# Usage: echo '{"file":"/path/to/file","errors":[...]}' | emacs-auto-fix
+# Returns: JSON with fix results
+
+set -euo pipefail
+
+# Read input from stdin
+INPUT=$(cat)
+
+# Parse file path from JSON input
+FILE_PATH=$(echo "$INPUT" | jq -r '.file // empty')
+
+if [[ -z "$FILE_PATH" ]]; then
+  echo '{"success":false,"error":"No file path provided"}' >&2
+  exit 1
+fi
+
+if [[ ! -f "$FILE_PATH" ]]; then
+  echo "{\"success\":false,\"error\":\"File not found: $FILE_PATH\"}" >&2
+  exit 1
+fi
+
+# Create backup
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_PATH="${FILE_PATH}.autofix.${TIMESTAMP}"
+cp "$FILE_PATH" "$BACKUP_PATH"
+
+FIXES_APPLIED=()
+FIXED=false
+
+# Helper function to apply fix and track it
+apply_fix() {
+  local description="$1"
+  local pattern="$2"
+  local replacement="$3"
+
+  if grep -q "$pattern" "$FILE_PATH" 2>/dev/null; then
+    sed -i.tmp "s|$pattern|$replacement|g" "$FILE_PATH"
+    rm -f "${FILE_PATH}.tmp"
+    FIXES_APPLIED+=("$description")
+    FIXED=true
+  fi
+}
+
+# Fix Pattern 1: Unbalanced parentheses (simple cases)
+# Count open and close parens
+OPEN_PARENS=$(grep -o '(' "$FILE_PATH" | wc -l | tr -d ' ')
+CLOSE_PARENS=$(grep -o ')' "$FILE_PATH" | wc -l | tr -d ' ')
+
+if [[ "$OPEN_PARENS" -gt "$CLOSE_PARENS" ]]; then
+  DIFF=$((OPEN_PARENS - CLOSE_PARENS))
+  for ((i=0; i<DIFF; i++)); do
+    echo ")" >> "$FILE_PATH"
+  done
+  FIXES_APPLIED+=("Added $DIFF missing closing parentheses")
+  FIXED=true
+fi
+
+# Fix Pattern 2: Common obsolete function replacements
+apply_fix "flet -> cl-flet" '\bflet\b' 'cl-flet'
+apply_fix "labels -> cl-labels" '\blabels\b' 'cl-labels'
+apply_fix "lexical-let -> let" '\blexical-let\b' 'let'
+apply_fix "string-to-int -> string-to-number" '\bstring-to-int\b' 'string-to-number'
+
+# Fix Pattern 3: Missing quotes for symbols (common pattern)
+# This is conservative - only fixes obvious cases
+apply_fix "Fix unquoted nil in setq" 'setq \([a-z-]+\) nil\([^)]\)' "setq \\1 'nil\\2"
+
+# Fix Pattern 4: Add missing require statements based on common undefined functions
+check_and_add_require() {
+  local func="$1"
+  local package="$2"
+
+  if grep -q "(\s*$func\b" "$FILE_PATH" 2>/dev/null; then
+    if ! grep -q "(require '$package)" "$FILE_PATH" 2>/dev/null; then
+      # Add require at the beginning of the file (after any initial comments)
+      local temp_file=$(mktemp)
+      awk -v pkg="$package" '
+        BEGIN { added=0 }
+        /^[^;]/ && !added {
+          print "(require '\''" pkg ")"
+          added=1
+        }
+        { print }
+      ' "$FILE_PATH" > "$temp_file"
+      mv "$temp_file" "$FILE_PATH"
+      FIXES_APPLIED+=("Added (require '$package) for $func")
+      FIXED=true
+    fi
+  fi
+}
+
+# Common packages and their functions
+check_and_add_require "use-package" "use-package"
+check_and_add_require "cl-loop" "cl-lib"
+check_and_add_require "cl-defun" "cl-lib"
+check_and_add_require "package-install" "package"
+
+# Fix Pattern 5: Fix common whitespace issues that cause errors
+# Remove trailing whitespace that might cause issues
+sed -i.tmp 's/[[:space:]]*$//' "$FILE_PATH"
+rm -f "${FILE_PATH}.tmp"
+
+# Fix Pattern 6: Ensure file ends with newline
+if [[ -n "$(tail -c 1 "$FILE_PATH")" ]]; then
+  echo "" >> "$FILE_PATH"
+  FIXES_APPLIED+=("Added final newline")
+  FIXED=true
+fi
+
+# Build JSON response
+if [[ "$FIXED" = true ]]; then
+  FIXES_JSON=$(printf '%s\n' "${FIXES_APPLIED[@]}" | jq -R . | jq -s .)
+  echo "{
+    \"success\": true,
+    \"file\": \"$FILE_PATH\",
+    \"backup\": \"$BACKUP_PATH\",
+    \"fixes\": $FIXES_JSON,
+    \"fixCount\": ${#FIXES_APPLIED[@]}
+  }"
+else
+  # No fixes applied, remove backup
+  rm -f "$BACKUP_PATH"
+  echo "{
+    \"success\": true,
+    \"file\": \"$FILE_PATH\",
+    \"fixes\": [],
+    \"fixCount\": 0,
+    \"message\": \"No automatic fixes available\"
+  }"
+fi

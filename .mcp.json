@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "serena": {
+      "command": "uvx",
+      "args": [
+        "--from",
+        "git+https://github.com/oraios/serena",
+        "serena",
+        "start-mcp-server"
+      ]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@executeautomation/playwright-mcp-server"
+      ],
+      "env": {
+        "PLAYWRIGHT_LAUNCH_OPTIONS": "{\"args\":[\"--disable-crash-reporter\",\"--disable-crashpad\",\"--disable-breakpad\"]}",
+        "PLAYWRIGHT_MCP_LOG_FILE": "/Users/pongchang/dotfiles/.playwright-mcp/server.log"
+      }
+    }
+  }
+}
