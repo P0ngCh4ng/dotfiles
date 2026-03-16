@@ -91,6 +91,47 @@ When modifying Emacs configuration files (`init.el`, elisp files):
 - **CRITICAL**: Never mark task complete until Emacs runs without ANY errors OR warnings
 - **CRITICAL**: "Clean" means ZERO errors and ZERO warnings - not just "no fatal errors"
 
+#### Claude Code Integration
+
+Claude Code provides automated tools for Emacs configuration verification:
+
+##### Slash Command: `/verify-emacs`
+Run comprehensive verification manually after editing Emacs files:
+```bash
+/verify-emacs
+```
+
+This command executes all 5 verification commands, parses output, and reports findings. Use this when you want to verify changes yourself.
+
+##### Agent: `emacs-verifier`
+Launch autonomous verification agent that automatically fixes issues:
+```bash
+# Invoke via Task tool or direct agent call
+/emacs-verifier
+```
+
+The agent will:
+1. Create backup automatically
+2. Run all 5 verification commands
+3. Parse ALL errors and warnings
+4. Auto-fix common issues without asking
+5. Re-verify after each fix
+6. Iterate until ZERO errors and ZERO warnings
+7. Provide detailed report of what was fixed
+
+**When to use**:
+- After making changes to `~/.emacs.d/init.el`
+- After modifying any `~/.emacs.d/elisp/*.el` files
+- When you want autonomous fix-verify iteration
+- When you want guaranteed clean configuration
+
+**Success criteria**:
+- ✅ All 5 verification commands pass
+- ✅ ZERO errors across all checks
+- ✅ ZERO warnings across all checks
+- ✅ Emacs launches successfully
+- ✅ Byte-compilation completes without warnings
+
 ### Package Management
 - Homebrew dependencies defined in Brewfile
 - Includes development tools: jq, lsd, mysql, volta, emacs

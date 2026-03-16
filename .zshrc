@@ -50,7 +50,9 @@ gacp() { git add . && git commit -m "$1" && git push; }
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
-alias claude='cage -config "$HOME/.config/cage/presets.yaml" claude --dangerously-skip-permissions'
+# Claude Code aliases
+alias claude='cage -config "$HOME/.config/cage/presets.yaml" claude --dangerously-skip-permissions'  # With Cage wrapper
+alias claude-raw='~/homebrew/bin/claude --dangerously-skip-permissions'  # Direct Claude Code (no Cage)
 zplug 'zsh-users/zsh-autosuggestions'
 zplug 'zsh-users/zsh-completions'
 zplug 'zsh-users/zsh-syntax-highlighting'
