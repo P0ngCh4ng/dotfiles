@@ -73,6 +73,11 @@ This dotfiles repository manages the **central project registry** (`projects.yml
 - UTF-8 encoding setup with Japanese language environment
 - Custom load-path management for extensibility
 
+#### Launch Method
+- **Primary method**: Launch from `/Applications/Emacs.app` (macOS GUI application)
+- **Not used**: Terminal emacs (`emacs -nw`) or command-line launch
+- Configuration is optimized for GUI Emacs with graphical features
+
 #### Automated Verification Workflow
 When modifying Emacs configuration files (`init.el`, elisp files):
 1. **Always backup first**: `cp ~/.emacs.d/init.el ~/.emacs.d/init.el.backup.$(date +%Y%m%d_%H%M%S)`
