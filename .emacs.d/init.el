@@ -750,5 +750,12 @@ Advances TODOs with names and seconds in TODO-NAMES-SECONDS."
             (message "Startup time: %.2fs" (float-time (time-subtract after-init-time before-init-time)))
             (message "===================================")))
 
+;; Claude Code workflow help system
+(use-package claude-code-help
+  :ensure nil  ;; Local package
+  :commands (claude-code-help-flow claude-code-help-quick-reference)
+  :bind (("C-c C-h f" . claude-code-help-flow)
+         ("C-c C-h q" . claude-code-help-quick-reference)))
+
 (provide 'init)
 ;;; init.el ends here
