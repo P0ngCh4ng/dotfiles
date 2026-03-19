@@ -47,6 +47,105 @@ alias gf='git fetch'
 alias gc='git commit'
 gacp() { git add . && git commit -m "$1" && git push; }
 
+# ============================================================
+# Project Management Functions (Port Management)
+# ============================================================
+
+# projects.yml のパス
+PROJECTS_FILE="$HOME/dotfiles/projects.yml"
+
+# 現在使用中のportをスキャン
+port-scan() {
+    echo "Currently used ports:"
+    lsof -iTCP -sTCP:LISTEN -n -P | awk 'NR>1 {print $9, $1}' | sed 's/.*://' | sort -n | uniq
+}
+
+# projects.ymlから全プロジェクトのport情報を表示
+check-ports() {
+    if [[ ! -f "$PROJECTS_FILE" ]]; then
+        echo "Error: $PROJECTS_FILE not found"
+        return 1
+    fi
+
+    echo "=== Project Port Assignments ==="
+    echo ""
+
+    # 使用中のportを取得
+    local used_ports=$(lsof -iTCP -sTCP:LISTEN -n -P 2>/dev/null | awk 'NR>1 {print $9}' | sed 's/.*://' | sort -n | uniq)
+
+    # projects.ymlをパース（シンプル実装）
+    local current_project=""
+    while IFS= read -r line; do
+        # プロジェクト名を取得
+        if [[ "$line" =~ ^[[:space:]]*([a-zA-Z0-9_-]+):$ ]]; then
+            current_project="${match[1]}"
+            if [[ "$current_project" != "projects" ]]; then
+                echo "📦 $current_project"
+            fi
+        fi
+
+        # portsを取得
+        if [[ "$line" =~ ports:[[:space:]]*\[([0-9, ]+)\] ]]; then
+            local ports="${match[1]}"
+            # ポートごとにチェック
+            for port in ${(s:,:)ports}; do
+                port=$(echo $port | tr -d ' ')
+                if echo "$used_ports" | grep -q "^${port}$"; then
+                    echo "  🔴 Port $port (IN USE)"
+                else
+                    echo "  🟢 Port $port (available)"
+                fi
+            done
+        fi
+    done < "$PROJECTS_FILE"
+}
+
+# プロジェクト情報を表示
+pj-info() {
+    if [[ -z "$1" ]]; then
+        echo "Usage: pj-info <project-name>"
+        echo ""
+        echo "Available projects:"
+        grep -E '^[[:space:]]*[a-zA-Z0-9_-]+:$' "$PROJECTS_FILE" | sed 's/://g' | sed 's/^[[:space:]]*/  - /' | grep -v 'projects'
+        return 1
+    fi
+
+    if [[ ! -f "$PROJECTS_FILE" ]]; then
+        echo "Error: $PROJECTS_FILE not found"
+        return 1
+    fi
+
+    local project_name="$1"
+    local in_project=0
+
+    echo "=== Project: $project_name ==="
+
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*${project_name}:$ ]]; then
+            in_project=1
+            continue
+        fi
+
+        if [[ $in_project -eq 1 ]]; then
+            # 次のプロジェクトが始まったら終了
+            if [[ "$line" =~ ^[[:space:]]*[a-zA-Z0-9_-]+:$ ]]; then
+                break
+            fi
+
+            # 情報を表示
+            if [[ "$line" =~ path:[[:space:]]*(.*) ]]; then
+                echo "Path: ${match[1]}"
+            elif [[ "$line" =~ ports:[[:space:]]*\[(.*)\] ]]; then
+                echo "Ports: ${match[1]}"
+            elif [[ "$line" =~ description:[[:space:]]*\"(.*)\" ]]; then
+                echo "Description: ${match[1]}"
+            elif [[ "$line" =~ tech:[[:space:]]*\[(.*)\] ]]; then
+                echo "Tech: ${match[1]}"
+            fi
+        fi
+    done < "$PROJECTS_FILE"
+}
+
 alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'

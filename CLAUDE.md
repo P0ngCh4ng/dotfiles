@@ -14,6 +14,7 @@ This is a personal dotfiles repository that manages configuration files and deve
 - **etc/init/**: Platform-specific setup scripts for macOS and Linux
 - **Brewfile**: Homebrew package definitions for macOS dependencies
 - **opt.zsh**: Comprehensive zsh option settings for shell behavior
+- **projects.yml**: Central registry for all local projects on this machine (gitignored, local only)
 
 ### Architecture
 
@@ -34,6 +35,30 @@ The dotfiles system uses a symbolic linking approach where configuration files a
 - Shell uses `lsd` as enhanced `ls` replacement
 - Git aliases include: `ga` (add), `gs` (status), `gp` (push), `gc` (commit), `gco` (checkout)
 - `gacp()` function: add all, commit with message, and push in one command
+
+### Project Management
+This dotfiles repository manages the **central project registry** (`projects.yml`) for all local projects on this machine.
+
+**Responsibility**:
+- Maintain `projects.yml` schema and shell functions
+- Provide template (`projects.yml.example`)
+- Keep port management functions in `.zshrc` up-to-date
+
+**Available Functions** (loaded via `.zshrc`):
+- `port-scan` - Display currently used ports system-wide
+- `pj-info [name]` - Show project details from projects.yml
+- `check-ports` - Check all projects' port assignments and availability
+
+**File Management**:
+- `projects.yml` - User's actual project list (gitignored, local only)
+- `projects.yml.example` - Template for new environments (tracked in git)
+- Location: `~/dotfiles/projects.yml`
+
+**When working in dotfiles**:
+- Changes to project management functions require testing with actual `projects.yml`
+- Updates to shell functions must be reflected in `.zshrc`
+- Template (`projects.yml.example`) should be kept simple and well-documented
+- Global rules are defined in `~/.claude/rules/project-management.md`
 
 ## Configuration Details
 

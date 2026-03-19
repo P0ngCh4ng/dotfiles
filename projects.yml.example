@@ -1,0 +1,18 @@
+# Project Management Configuration
+# Copy this file to projects.yml and customize for your environment
+
+projects:
+  # Example configuration:
+  example-project:
+    path: ~/workspace/example
+    ports: [3000, 3001]  # main app, api server, etc.
+    description: "Short description"
+    tech: [node, react, postgresql]  # optional
+
+  # Add your projects here:
+
+# Future expansion ideas:
+# - git branch tracking
+# - dependency management
+# - quick navigation shortcuts
+# - batch operations
