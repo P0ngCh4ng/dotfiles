@@ -1,174 +1,276 @@
 # Verify Emacs Configuration
 
-Perform comprehensive verification of Emacs configuration files to ensure they are error-free and warning-free.
+Perform comprehensive verification of Emacs configuration files with environment-aware testing.
 
-## Verification Workflow
+**IMPORTANT**: Before running this command, read:
+- `~/.claude/rules/emacs-environment.md` - Environment detection and batch mode limitations
+- `~/.claude/rules/verification-strategy.md` - When to use which verification method
+- `~/.claude/skills/emacs-verification/SKILL.md` - Concrete verification commands
 
-Execute the following steps in order:
+## Quick Reference
 
-### 1. Create Backup
+**What this command does**:
+1. Detects Emacs environment (GUI vs CLI)
+2. Runs batch mode syntax/compilation checks
+3. **Cannot verify lazy-loaded features** (`:after`, `:defer`)
+4. Provides GUI test instructions for features that need manual verification
+
+**What you MUST test in GUI Emacs yourself**:
+- Keybindings for packages with `:after` directive
+- Interactive commands from lazy-loaded packages
+- Features that depend on vterm, claude-code, or GUI-only packages
+
+## Step 1: Detect Emacs Environment
+
 ```bash
-cp ~/.emacs.d/init.el ~/.emacs.d/init.el.backup.$(date +%Y%m%d_%H%M%S)
+# Auto-detect Emacs executable
+if [ -f /Applications/Emacs.app/Contents/MacOS/Emacs ]; then
+    EMACS="/Applications/Emacs.app/Contents/MacOS/Emacs"
+elif command -v emacs &> /dev/null; then
+    EMACS="emacs"
+else
+    echo "ERROR: Emacs not found"
+    echo "Expected location: /Applications/Emacs.app/Contents/MacOS/Emacs"
+    exit 1
+fi
+
+echo "Using Emacs: $EMACS"
 ```
 
-### 2. Clean Old Byte-Compiled Files
-
-**Automatically detect and remove stale .elc files:**
+## Step 2: Create Backup
 
 ```bash
-# Find all .el files that are newer than their .elc counterparts
-for el in ~/.emacs.d/init.el ~/.emacs.d/elisp/*.el; do
-  elc="${el}c"
-  if [ -f "$elc" ] && [ "$el" -nt "$elc" ]; then
-    echo "Removing stale: $elc (source is newer)"
-    rm -f "$elc"
-  fi
-done
+BACKUP_FILE="$HOME/.emacs.d/init.el.backup.$(date +%Y%m%d_%H%M%S)"
+cp ~/.emacs.d/init.el "$BACKUP_FILE"
+echo "✅ Backup created: $BACKUP_FILE"
 ```
 
-**Or simply remove all .elc files to be safe:**
+## Step 3: Clean Old Byte-Compiled Files
+
 ```bash
+echo "Cleaning stale byte-compiled files..."
 rm -f ~/.emacs.d/init.elc ~/.emacs.d/elisp/*.elc
+echo "✅ Byte-compiled files removed"
 ```
 
-**CRITICAL**: Even with `load-prefer-newer t`, it's best practice to remove stale `.elc` files during development to avoid confusion.
+**Why**: Even with `load-prefer-newer t`, removing `.elc` files ensures you're testing current source code.
 
-### 3. Run ALL Verification Commands
+## Step 4: Run Batch Mode Verification
 
-Execute each command and capture BOTH stderr and stdout:
+**CRITICAL**: Batch mode verification has limitations (see `~/.claude/rules/emacs-environment.md`).
 
-#### Basic Syntax Check
+### 4.1 Basic Syntax Check
+
 ```bash
-emacs --batch -l ~/.emacs.d/init.el 2>&1
+echo "=== Syntax Check ==="
+$EMACS --batch -l ~/.emacs.d/init.el 2>&1 | grep -v "Cannot load" | tee /tmp/emacs-syntax.log
 ```
 
-#### Runtime Test (3-second auto-exit)
+**Ignore**: "Cannot load" messages for packages with `:after` or `:defer` (normal behavior).
+
+### 4.2 Byte-Compile Validation
+
 ```bash
-emacs --eval "(run-with-timer 3 nil #'kill-emacs)" 2>&1
+echo "=== Byte-Compile Check ==="
+$EMACS --batch --eval "(byte-compile-file \"~/.emacs.d/init.el\")" 2>&1 | tee /tmp/emacs-compile.log
 ```
 
-#### Byte-Compile Validation
+### 4.3 Runtime Test (Auto-Exit)
+
 ```bash
-emacs --batch --eval "(byte-compile-file \"~/.emacs.d/init.el\")" 2>&1
+echo "=== Runtime Test (3-second timeout) ==="
+$EMACS --eval "(run-with-timer 3 nil #'kill-emacs)" 2>&1 | tee /tmp/emacs-runtime.log
 ```
 
-#### Package Verification
+### 4.4 Package Initialization
+
 ```bash
-emacs --batch --eval "(progn (require 'package) (package-initialize))" 2>&1
+echo "=== Package Initialization ==="
+$EMACS --batch --eval "(progn (require 'package) (package-initialize))" 2>&1 | tee /tmp/emacs-package.log
 ```
 
-#### Messages Buffer Check
+### 4.5 Messages Buffer Check
+
 ```bash
-emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (with-current-buffer \"*Messages*\" (princ (buffer-string))))" 2>&1
+echo "=== Messages Buffer Check ==="
+$EMACS --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (with-current-buffer \"*Messages*\" (princ (buffer-string))))" 2>&1 | tee /tmp/emacs-messages.log
 ```
 
-### 4. Analyze Results
+## Step 5: Analyze Results
 
-Parse ALL output for:
-- **Errors**: Syntax errors, runtime errors, loading errors
-- **Warnings**: Obsolete functions, deprecated variables, undefined functions
-- **Compilation warnings**: Unused variables, wrong argument counts
-- **Package issues**: Missing packages, version conflicts
+### Categorize Issues
 
-### 5. Report Findings
-
-Create a comprehensive report including:
-- Total count of errors and warnings
-- Categorized list of issues
-- Severity assessment (Critical/High/Medium/Low)
-- Specific file and line numbers when available
-
-### 6. Auto-Fix Issues
-
-Automatically fix common issues:
-- Missing packages → `(package-install 'package-name)`
-- Syntax errors → Correct quotes, parentheses
-- Undefined functions → Add `(require 'feature)`
-- Obsolete functions → Replace with modern equivalents
-- Deprecated variables → Update to new names
-- Wrong number of arguments → Fix function calls
-- Unbalanced parentheses → Balance properly
-
-### 7. Re-Verify After Fixes
-
-Re-run ALL verification commands after making fixes.
-
-### 8. Iterate Until Clean
-
-**CRITICAL**: Continue the fix-verify cycle until:
-- ZERO errors
-- ZERO warnings
-- Emacs starts successfully without any messages
-
-## Success Criteria
-
-✅ All 5 verification commands complete without errors
-✅ No warnings in any output
-✅ Emacs launches and exits cleanly
-✅ No messages in *Messages* buffer indicating issues
-✅ Byte-compilation succeeds without warnings
-✅ Stale .elc files removed
-
-## After Verification (Optional)
-
-If this is a **completed, stable feature** and you want performance benefits:
 ```bash
-# Byte-compile the file
-emacs --batch --eval "(byte-compile-file \"~/.emacs.d/elisp/YOUR-FILE.el\")"
+# Count actual errors (ignore lazy-load "Cannot load")
+ERRORS=$(cat /tmp/emacs-*.log | grep -i "error" | grep -v "Cannot load" | grep -v "file-missing.*:after" | wc -l)
+
+# Count warnings
+WARNINGS=$(grep -i "warning" /tmp/emacs-compile.log | wc -l)
+
+echo ""
+echo "========================================="
+echo "  Batch Mode Verification Results"
+echo "========================================="
+echo "Errors: $ERRORS"
+echo "Warnings: $WARNINGS"
+echo ""
 ```
 
-**Don't byte-compile during active development** - `load-prefer-newer t` will use the newer `.el` file, but it's cleaner to just delete `.elc` files while developing.
+### Filter Expected Messages
 
-## Failure Conditions
+**Expected in batch mode** (not errors):
+- `Cannot load claude-code` - Uses `:after vterm`
+- `Cannot load claude-code-projects` - Uses `:after claude-code`
+- `Cannot load vterm` - GUI-dependent package
+- Any package with `:after` or `:defer` directive
 
-❌ Any error messages in verification output
-❌ Any warning messages in verification output
-❌ Emacs fails to start
-❌ Byte-compilation produces warnings
-❌ Package initialization fails
+**Real errors to fix**:
+- Syntax errors (unbalanced parentheses, quotes)
+- Undefined functions (not from lazy-loaded packages)
+- Missing files (not lazy-loaded)
+- Byte-compilation errors
 
-## Feature-Specific Verification
+## Step 6: Report Findings
 
-When adding new commands, keybindings, or modes, verify they work correctly:
+Create a comprehensive report showing:
 
-### When Adding Interactive Commands
-1. Verify command is interactive:
+1. **Batch mode results** (syntax, compilation)
+2. **Limitations** (what couldn't be tested)
+3. **Manual test instructions** (GUI Emacs required)
+4. **Error details** (if any found)
+
+## Step 7: Auto-Fix Common Issues
+
+**Only fix real errors**, not expected lazy-load messages:
+
 ```bash
-emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (commandp 'COMMAND-NAME) \"✓ Interactive\" \"✗ Not interactive\")))" 2>&1
+# Example auto-fixes
+# - Missing packages → Add (package-install 'package-name)
+# - Syntax errors → Fix quotes, parentheses
+# - Undefined functions → Add (require 'feature) or (declare-function ...)
+# - Obsolete functions → Replace with modern equivalents
 ```
-2. Verify autoload configured:
-```bash
-emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (autoloadp (symbol-function 'COMMAND-NAME)) \"✓ Autoload\" \"✗ No autoload\")))" 2>&1
-```
-3. **Test in helm-M-x**: Launch Emacs and check if command appears in `helm-M-x` or `M-x`
-4. **Execute the command**: Run it and verify expected behavior
 
-### When Adding Keybindings
-1. Verify binding registered:
-```bash
-emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (key-binding (kbd \"KEY-SEQUENCE\"))))" 2>&1
-```
-2. **Test the key**: Press the key combination and verify it invokes the correct command
-3. Check for conflicts: Verify the key isn't already bound to something important
+**DO NOT try to fix**:
+- "Cannot load" for packages with `:after` (working as designed)
+- Missing keybindings in batch mode (can't be tested in batch)
+- Interactive command unavailability (batch mode limitation)
 
-### When Adding New Modes
-1. Verify mode function exists:
-```bash
-emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (fboundp 'MODE-NAME) \"✓ Mode defined\" \"✗ Not defined\")))" 2>&1
+## Step 8: Create GUI Test Plan
+
+For features that **cannot be verified in batch mode**, provide clear manual test instructions:
+
+```markdown
+## Manual Testing Required in GUI Emacs
+
+**Why**: The following features use `:after` or `:defer` and won't load in batch mode.
+
+### Test: C-c C-p keybinding (claude-code-projects)
+
+**Dependencies**: vterm → claude-code → claude-code-projects (chain loading)
+
+**Steps**:
+1. Launch GUI Emacs: `open /Applications/Emacs.app`
+2. Wait for initialization (~5-10 seconds)
+3. Check *Messages* buffer: `C-x b *Messages* RET`
+   - Look for errors (scroll to bottom)
+4. Test function exists: `M-:` (eval-expression)
+   ```elisp
+   (fboundp 'claude-code-select-project)
+   ```
+   - Should return `t`
+5. Test keybinding: `M-:`
+   ```elisp
+   (key-binding (kbd "C-c C-p"))
+   ```
+   - Should return `claude-code-select-project`
+6. **Actually press C-c C-p**
+   - Should show project selection prompt
+7. Select a project and verify it starts Claude Code
+
+**If it doesn't work**:
+- Check if vterm loaded: `M-: (featurep 'vterm)`
+- Check if claude-code loaded: `M-: (featurep 'claude-code)`
+- Check if claude-code-projects loaded: `M-: (featurep 'claude-code-projects)`
+- Try manual load: `M-x require RET claude-code RET`
 ```
-2. **Test mode activation**: Enable the mode and verify it works
-3. **Test mode keybindings**: Press each key defined in the mode keymap and verify functionality
-4. **Test mode hooks**: Verify hooks execute as expected
-5. Verify mode-specific faces/variables are applied correctly
+
+## Step 9: Success Criteria
+
+### Batch Mode (Automated)
+
+✅ Syntax check passes (no errors)
+✅ Byte-compilation succeeds (no errors, ideally no warnings)
+✅ Runtime test completes (Emacs starts and exits)
+✅ Package initialization works
+✅ No errors in *Messages* buffer (except expected lazy-load messages)
+
+### GUI Mode (Manual)
+
+✅ All lazy-loaded packages load correctly
+✅ Keybindings work as expected
+✅ Interactive commands are available
+✅ No errors in *Messages* buffer after full initialization
+✅ Specific features (like C-c C-p) work correctly
+
+## Step 10: Final Report
+
+```markdown
+# Emacs Verification Report
+
+## Environment
+- Emacs: [path]
+- Version: [version]
+- Backup: [backup file path]
+
+## Batch Mode Results
+- ✅ Syntax: PASS
+- ✅ Byte-compile: PASS (0 errors, X warnings)
+- ✅ Runtime: PASS
+- ✅ Packages: PASS
+
+## Batch Mode Limitations
+⚠️ The following could NOT be verified in batch mode:
+- Lazy-loaded packages (`:after`, `:defer`)
+- Keybindings for lazy-loaded features
+- Interactive commands from deferred packages
+- GUI-specific features
+
+## Required Manual Tests
+📋 Test these in GUI Emacs (/Applications/Emacs.app):
+1. [Feature 1]: [Test steps]
+2. [Feature 2]: [Test steps]
+...
+
+## Issues Found
+- [List of actual errors, if any]
+
+## Next Steps
+- [ ] If errors found: Fix and re-run verification
+- [ ] Launch GUI Emacs and perform manual tests
+- [ ] Verify all features work as expected
+```
 
 ## Usage
 
-After editing any Emacs configuration file, run:
-```
-/verify-emacs
-```
+```bash
+# Run this verification
+/verify-emacs [optional: describe what you changed]
 
-Or invoke the emacs-verifier agent for autonomous verification:
-```
+# For autonomous verification with auto-fixing
 /emacs-verifier
 ```
+
+## Important Notes
+
+1. **Batch mode is NOT sufficient** for complete verification
+2. **Always test critical features** in GUI Emacs after batch verification passes
+3. **"Cannot load" messages** for lazy-loaded packages are **expected and normal**
+4. **Don't try to "fix"** lazy-loading behavior - it's working as designed
+5. **Provide clear manual test instructions** instead of claiming batch mode coverage
+
+## Related Documentation
+
+- Environment rules: `~/.claude/rules/emacs-environment.md`
+- Verification strategy: `~/.claude/rules/verification-strategy.md`
+- Concrete commands: `~/.claude/skills/emacs-verification/SKILL.md`

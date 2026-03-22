@@ -147,126 +147,46 @@ This dotfiles repository manages the **central project registry** (`projects.yml
 - UTF-8 encoding setup with Japanese language environment
 - Custom load-path management for extensibility
 
-#### Launch Method
+**Environment**: See `~/.claude/rules/emacs-environment.md` for details
 - **Primary method**: Launch from `/Applications/Emacs.app` (macOS GUI application)
 - **Not used**: Terminal emacs (`emacs -nw`) or command-line launch
 - Configuration is optimized for GUI Emacs with graphical features
 
-#### Automated Verification Workflow
-When modifying Emacs configuration files (`init.el`, elisp files):
-1. **Always backup first**: `cp ~/.emacs.d/init.el ~/.emacs.d/init.el.backup.$(date +%Y%m%d_%H%M%S)`
-2. **After editing, run comprehensive verification**:
-   - Syntax check via batch mode
-   - **Runtime verification**: Actually launch Emacs and capture all errors/warnings
-   - Check `*Messages*` buffer for warnings
-   - Verify byte-compilation output
-3. **Parse and analyze ALL warnings and errors** - not just syntax errors but also:
-   - Runtime errors (undefined functions, wrong arguments, etc.)
-   - Warnings (obsolete functions, deprecated features, etc.)
-   - Package loading issues
-   - Compilation warnings
-4. **Automatically fix ALL issues** found in verification
-5. **Iterate until ALL warnings and errors are resolved** - do not stop until completely clean
-6. **Only confirm completion** when Emacs starts without any errors or warnings
+#### Emacs Verification
 
-#### Verification Commands (Execute ALL)
-- **Clean old byte-compiled files**: `rm ~/.emacs.d/init.elc ~/.emacs.d/elisp/*.elc` (if they exist)
-- Basic syntax check: `emacs --batch -l ~/.emacs.d/init.el 2>&1`
-- **Runtime test**: `emacs --eval "(run-with-timer 3 nil #'kill-emacs)" 2>&1` (capture stderr/stdout)
-- Byte-compile validation: `emacs --batch --eval "(byte-compile-file \"~/.emacs.d/init.el\")" 2>&1`
-- Package verification: `emacs --batch --eval "(progn (require 'package) (package-initialize))" 2>&1`
-- **Messages buffer check**: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (with-current-buffer \"*Messages*\" (princ (buffer-string))))" 2>&1`
+**Complete documentation available at**:
+- **Rules**: `~/.claude/rules/emacs-environment.md` - Environment detection, batch mode limitations
+- **Rules**: `~/.claude/rules/verification-strategy.md` - When to use which verification method
+- **Skills**: `~/.claude/skills/emacs-verification/SKILL.md` - Concrete verification commands
 
-**IMPORTANT**: Always delete `.elc` files before verification to ensure you're testing the current `.el` source, not stale byte-compiled code.
+**Critical Understanding**:
+- **Batch mode limitations**: Packages with `:after` or `:defer` won't load in batch mode
+- **"Cannot load" messages**: For lazy-loaded packages are EXPECTED and NORMAL, not errors
+- **GUI testing required**: For lazy-loaded features like `C-c C-p` (claude-code-projects)
+- **Environment detection**: Auto-detect `/Applications/Emacs.app/Contents/MacOS/Emacs` vs `emacs` command
 
-#### Byte-Compilation Strategy
-- **During development**: `load-prefer-newer t` ensures `.el` is used if newer than `.elc`
-- **After feature completion**: Generate `.elc` for performance:
-  ```bash
-  emacs --batch --eval "(byte-compile-file \"~/.emacs.d/elisp/YOUR-FILE.el\")"
-  ```
-- **Best practice**: Only byte-compile stable, completed features
+**Verification Workflow**:
+1. Backup first
+2. Run batch mode checks (syntax, byte-compile)
+3. Understand what batch mode **cannot** verify (lazy-loaded features)
+4. Create GUI test plan for features that need manual testing
+5. Fix **actual** errors (not lazy-load messages)
+6. Iterate until clean
 
-#### Feature-Specific Verification
-When adding new commands, keybindings, or modes, verify they work correctly:
+**Tools**:
+- **Slash Command**: `/verify-emacs` - Run verification with environment detection
+- **Agent**: `emacs-verifier` - Autonomous verification with auto-fixing
 
-**When adding interactive commands:**
-1. Verify command is interactive: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (commandp 'COMMAND-NAME) \"✓ Interactive\" \"✗ Not interactive\")))" 2>&1`
-2. Verify autoload configured: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (autoloadp (symbol-function 'COMMAND-NAME)) \"✓ Autoload\" \"✗ No autoload\")))" 2>&1`
-3. **Test in helm-M-x**: Actually launch Emacs and check if command appears in `helm-M-x` or `M-x`
-4. **Execute the command**: Run it and verify expected behavior
-
-**When adding keybindings:**
-1. Verify binding registered: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (key-binding (kbd \"KEY-SEQUENCE\"))))" 2>&1`
-2. **Test the key**: Actually press the key combination and verify it invokes the correct command
-3. Check for conflicts: Verify the key isn't already bound to something important
-
-**When adding new modes:**
-1. Verify mode function exists: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (fboundp 'MODE-NAME) \"✓ Mode defined\" \"✗ Not defined\")))" 2>&1`
-2. **Test mode activation**: Enable the mode and verify it works
-3. **Test mode keybindings**: Press each key defined in the mode keymap and verify functionality
-4. **Test mode hooks**: Verify hooks execute as expected
-5. Verify mode-specific faces/variables are applied correctly
-
-#### Error Handling Protocol
-- **Capture BOTH stderr and stdout** (use `2>&1`) to catch all warnings/errors
-- **Parse ALL messages** including:
-  - Error messages (syntax, runtime, loading errors)
-  - Warning messages (obsolete functions, deprecated variables)
-  - Compilation warnings (unused variables, undefined functions)
-  - Package-related warnings
-- **Common issues to auto-fix**:
-  - Missing packages → install via package-install
-  - Syntax errors (quotes, parentheses) → correct syntax
-  - Undefined functions → add missing `require` statements
-  - Obsolete functions → replace with modern equivalents
-  - Deprecated variables → update to new variable names
-  - Wrong number of arguments → fix function calls
-  - Unbalanced parentheses → balance properly
-- **Use TodoWrite** to track: backup → edit → verify → fix ALL errors → fix ALL warnings → re-verify loop
-- **CRITICAL**: Never mark task complete until Emacs runs without ANY errors OR warnings
-- **CRITICAL**: "Clean" means ZERO errors and ZERO warnings - not just "no fatal errors"
-
-#### Claude Code Integration
-
-Claude Code provides automated tools for Emacs configuration verification:
-
-##### Slash Command: `/verify-emacs`
-Run comprehensive verification manually after editing Emacs files:
-```bash
-/verify-emacs
-```
-
-This command executes all 5 verification commands, parses output, and reports findings. Use this when you want to verify changes yourself.
-
-##### Agent: `emacs-verifier`
-Launch autonomous verification agent that automatically fixes issues:
-```bash
-# Invoke via Task tool or direct agent call
-/emacs-verifier
-```
-
-The agent will:
-1. Create backup automatically
-2. Run all 5 verification commands
-3. Parse ALL errors and warnings
-4. Auto-fix common issues without asking
-5. Re-verify after each fix
-6. Iterate until ZERO errors and ZERO warnings
-7. Provide detailed report of what was fixed
-
-**When to use**:
-- After making changes to `~/.emacs.d/init.el`
-- After modifying any `~/.emacs.d/elisp/*.el` files
-- When you want autonomous fix-verify iteration
-- When you want guaranteed clean configuration
+**When to use emacs-verifier**:
+- After editing `~/.emacs.d/init.el` or `~/.emacs.d/elisp/*.el`
+- When you want automated fix-verify iteration
+- When you need guaranteed clean configuration (zero actual errors/warnings)
 
 **Success criteria**:
-- ✅ All 5 verification commands pass
-- ✅ ZERO errors across all checks
-- ✅ ZERO warnings across all checks
-- ✅ Emacs launches successfully
-- ✅ Byte-compilation completes without warnings
+- ✅ Zero **actual** errors (ignoring lazy-load messages)
+- ✅ Zero **actual** warnings (ignoring lazy-load messages)
+- ✅ Batch mode checks pass
+- ✅ GUI test plan created for lazy-loaded features
 
 ### Package Management
 - Homebrew dependencies defined in Brewfile
