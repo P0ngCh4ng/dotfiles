@@ -96,11 +96,43 @@ When modifying Emacs configuration files (`init.el`, elisp files):
 6. **Only confirm completion** when Emacs starts without any errors or warnings
 
 #### Verification Commands (Execute ALL)
+- **Clean old byte-compiled files**: `rm ~/.emacs.d/init.elc ~/.emacs.d/elisp/*.elc` (if they exist)
 - Basic syntax check: `emacs --batch -l ~/.emacs.d/init.el 2>&1`
 - **Runtime test**: `emacs --eval "(run-with-timer 3 nil #'kill-emacs)" 2>&1` (capture stderr/stdout)
 - Byte-compile validation: `emacs --batch --eval "(byte-compile-file \"~/.emacs.d/init.el\")" 2>&1`
 - Package verification: `emacs --batch --eval "(progn (require 'package) (package-initialize))" 2>&1`
 - **Messages buffer check**: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (with-current-buffer \"*Messages*\" (princ (buffer-string))))" 2>&1`
+
+**IMPORTANT**: Always delete `.elc` files before verification to ensure you're testing the current `.el` source, not stale byte-compiled code.
+
+#### Byte-Compilation Strategy
+- **During development**: `load-prefer-newer t` ensures `.el` is used if newer than `.elc`
+- **After feature completion**: Generate `.elc` for performance:
+  ```bash
+  emacs --batch --eval "(byte-compile-file \"~/.emacs.d/elisp/YOUR-FILE.el\")"
+  ```
+- **Best practice**: Only byte-compile stable, completed features
+
+#### Feature-Specific Verification
+When adding new commands, keybindings, or modes, verify they work correctly:
+
+**When adding interactive commands:**
+1. Verify command is interactive: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (commandp 'COMMAND-NAME) \"✓ Interactive\" \"✗ Not interactive\")))" 2>&1`
+2. Verify autoload configured: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (autoloadp (symbol-function 'COMMAND-NAME)) \"✓ Autoload\" \"✗ No autoload\")))" 2>&1`
+3. **Test in helm-M-x**: Actually launch Emacs and check if command appears in `helm-M-x` or `M-x`
+4. **Execute the command**: Run it and verify expected behavior
+
+**When adding keybindings:**
+1. Verify binding registered: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (key-binding (kbd \"KEY-SEQUENCE\"))))" 2>&1`
+2. **Test the key**: Actually press the key combination and verify it invokes the correct command
+3. Check for conflicts: Verify the key isn't already bound to something important
+
+**When adding new modes:**
+1. Verify mode function exists: `emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (fboundp 'MODE-NAME) \"✓ Mode defined\" \"✗ Not defined\")))" 2>&1`
+2. **Test mode activation**: Enable the mode and verify it works
+3. **Test mode keybindings**: Press each key defined in the mode keymap and verify functionality
+4. **Test mode hooks**: Verify hooks execute as expected
+5. Verify mode-specific faces/variables are applied correctly
 
 #### Error Handling Protocol
 - **Capture BOTH stderr and stdout** (use `2>&1`) to catch all warnings/errors
