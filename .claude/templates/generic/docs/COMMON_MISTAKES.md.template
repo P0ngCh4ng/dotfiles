@@ -1,0 +1,478 @@
+# Common Mistakes and How to Avoid Them
+
+This document catalogs common mistakes made in this project and provides guidance on how to avoid them.
+
+## General Development Mistakes
+
+### 1. Not Writing Tests
+
+**Mistake**: Writing code without corresponding tests, or writing tests after the fact.
+
+**Why It's Bad**:
+- Harder to catch regressions
+- Decreases confidence when refactoring
+- Technical debt accumulates
+- Bugs make it to production
+
+**How to Avoid**:
+- Follow Test-Driven Development (TDD) when possible
+- Write tests alongside code, not later
+- Aim for minimum 80% code coverage
+- Run tests before committing code
+
+**Example**:
+```
+❌ BAD: Writing feature without tests
+✅ GOOD: Write test first, then implement
+
+// Good approach:
+1. Write failing test
+2. Implement minimal code to pass
+3. Refactor
+4. Repeat
+```
+
+---
+
+### 2. Missing Error Handling
+
+**Mistake**: Not handling errors or edge cases properly.
+
+**Why It's Bad**:
+- Application crashes unexpectedly
+- Poor user experience
+- Data corruption or loss
+- Security vulnerabilities
+
+**How to Avoid**:
+- Always handle errors from external calls (API, database, file system)
+- Validate inputs
+- Use try-catch blocks appropriately
+- Log errors with sufficient context
+- Provide meaningful error messages
+
+**Example**:
+```
+❌ BAD:
+const data = JSON.parse(userInput);
+
+✅ GOOD:
+try {
+  const data = JSON.parse(userInput);
+  // Process data
+} catch (error) {
+  logger.error('Failed to parse user input', { error, userInput });
+  return { error: 'Invalid input format' };
+}
+```
+
+---
+
+### 3. Poor Naming Conventions
+
+**Mistake**: Using unclear, abbreviated, or misleading names for variables, functions, and classes.
+
+**Why It's Bad**:
+- Code is hard to understand
+- Increases onboarding time
+- More likely to introduce bugs
+- Requires excessive comments
+
+**How to Avoid**:
+- Use descriptive, intention-revealing names
+- Follow language/framework naming conventions
+- Avoid abbreviations unless universally understood
+- Make names searchable (avoid single letters except in loops)
+
+**Example**:
+```
+❌ BAD:
+function p(d) {
+  const t = d * 86400;
+  return t;
+}
+
+✅ GOOD:
+function convertDaysToSeconds(days) {
+  const secondsPerDay = 86400;
+  return days * secondsPerDay;
+}
+```
+
+---
+
+### 4. Not Reading Documentation
+
+**Mistake**: Jumping into implementation without reading existing documentation or code.
+
+**Why It's Bad**:
+- Reinventing the wheel
+- Inconsistent with existing patterns
+- Breaking existing functionality
+- Wasting time on solved problems
+
+**How to Avoid**:
+- Read CLAUDE.md and ARCHITECTURE.md before starting
+- Review existing code in the area you're modifying
+- Check for existing utilities/helpers before creating new ones
+- Ask questions if unclear
+
+---
+
+### 5. Hardcoding Values
+
+**Mistake**: Hardcoding configuration values, secrets, or environment-specific data in code.
+
+**Why It's Bad**:
+- Difficult to change across environments
+- Security risks (exposed secrets)
+- Harder to test
+- Violates DRY principle
+
+**How to Avoid**:
+- Use environment variables or configuration files
+- Store secrets in secure vaults
+- Create constants for magic numbers
+- Use dependency injection for configuration
+
+**Example**:
+```
+❌ BAD:
+const apiUrl = 'https://api.example.com';
+const apiKey = 'sk_live_abc123xyz';
+
+✅ GOOD:
+const apiUrl = process.env.API_URL;
+const apiKey = process.env.API_KEY;
+```
+
+---
+
+### 6. Ignoring Code Reviews
+
+**Mistake**: Not thoroughly reviewing code or dismissing review feedback.
+
+**Why It's Bad**:
+- Bugs slip into production
+- Code quality degrades
+- Team knowledge sharing suffers
+- Technical debt accumulates
+
+**How to Avoid**:
+- Take code reviews seriously
+- Address all review comments
+- Ask for clarification if feedback is unclear
+- Learn from feedback
+
+---
+
+### 7. Committing Without Testing
+
+**Mistake**: Committing code without running tests or manual verification.
+
+**Why It's Bad**:
+- Breaks CI/CD pipeline
+- Blocks other developers
+- Wastes team time
+- Reduces confidence in codebase
+
+**How to Avoid**:
+- Run all tests before committing
+- Use pre-commit hooks
+- Test your changes manually
+- Check CI status before merging
+
+---
+
+### 8. Not Updating Documentation
+
+**Mistake**: Changing code without updating corresponding documentation.
+
+**Why It's Bad**:
+- Documentation becomes outdated and unreliable
+- New team members get confused
+- Time wasted on wrong information
+- Institutional knowledge is lost
+
+**How to Avoid**:
+- Update docs as part of your PR
+- Include documentation in code review checklist
+- Keep README.md current
+- Update ARCHITECTURE.md for significant changes
+
+---
+
+### 9. Copy-Paste Programming
+
+**Mistake**: Copying code without understanding it or creating duplicates instead of extracting common logic.
+
+**Why It's Bad**:
+- Violates DRY principle
+- Bugs get duplicated
+- Harder to maintain
+- Increases codebase size unnecessarily
+
+**How to Avoid**:
+- Extract common logic into functions/classes
+- Create reusable utilities
+- Understand code before copying
+- Refactor when you notice duplication
+
+**Example**:
+```
+❌ BAD: Duplicating validation logic
+function createUser(data) {
+  if (!data.email || !data.email.includes('@')) {
+    throw new Error('Invalid email');
+  }
+  // ... create user
+}
+
+function updateUser(data) {
+  if (!data.email || !data.email.includes('@')) {
+    throw new Error('Invalid email');
+  }
+  // ... update user
+}
+
+✅ GOOD: Extract common validation
+function validateEmail(email) {
+  if (!email || !email.includes('@')) {
+    throw new Error('Invalid email');
+  }
+}
+
+function createUser(data) {
+  validateEmail(data.email);
+  // ... create user
+}
+
+function updateUser(data) {
+  validateEmail(data.email);
+  // ... update user
+}
+```
+
+---
+
+### 10. Premature Optimization
+
+**Mistake**: Optimizing code before identifying actual performance bottlenecks.
+
+**Why It's Bad**:
+- Wastes development time
+- Makes code more complex
+- May not address real issues
+- Harder to maintain
+
+**How to Avoid**:
+- Measure before optimizing
+- Focus on code clarity first
+- Optimize based on profiling data
+- Follow "make it work, make it right, make it fast"
+
+---
+
+## Project-Specific Mistakes
+
+### [Add project-specific common mistakes here]
+
+**Mistake**: [Description]
+
+**Why It's Bad**:
+- [Reason 1]
+- [Reason 2]
+
+**How to Avoid**:
+- [Solution 1]
+- [Solution 2]
+
+**Example**:
+```
+❌ BAD:
+[Bad example]
+
+✅ GOOD:
+[Good example]
+```
+
+---
+
+## Database-Related Mistakes
+
+### 11. N+1 Query Problem
+
+**Mistake**: Making N+1 database queries in a loop instead of batch loading.
+
+**Why It's Bad**:
+- Severe performance degradation
+- Increased database load
+- Slower response times
+- Higher costs
+
+**How to Avoid**:
+- Use eager loading/joins
+- Batch queries
+- Use ORM features for relationships
+- Profile database queries
+
+---
+
+### 12. Missing Database Indexes
+
+**Mistake**: Not adding indexes on frequently queried columns.
+
+**Why It's Bad**:
+- Slow queries
+- Full table scans
+- Database performance issues
+- Poor user experience
+
+**How to Avoid**:
+- Analyze query patterns
+- Add indexes on foreign keys
+- Add indexes on columns used in WHERE/JOIN
+- Monitor slow query logs
+
+---
+
+## Security Mistakes
+
+### 13. Not Validating User Input
+
+**Mistake**: Trusting user input without validation or sanitization.
+
+**Why It's Bad**:
+- SQL injection vulnerabilities
+- XSS attacks
+- Data corruption
+- System compromise
+
+**How to Avoid**:
+- Validate all user input
+- Use parameterized queries
+- Sanitize output
+- Use validation libraries
+
+---
+
+### 14. Exposing Sensitive Information
+
+**Mistake**: Logging or exposing sensitive data (passwords, tokens, PII).
+
+**Why It's Bad**:
+- Security breaches
+- Privacy violations
+- Compliance issues
+- Loss of trust
+
+**How to Avoid**:
+- Never log passwords or tokens
+- Redact sensitive data in logs
+- Use environment variables for secrets
+- Review logs for sensitive data
+
+---
+
+## Git Workflow Mistakes
+
+### 15. Unclear Commit Messages
+
+**Mistake**: Writing vague or non-descriptive commit messages.
+
+**Why It's Bad**:
+- Hard to understand project history
+- Difficult to find specific changes
+- Makes debugging harder
+- Poor documentation
+
+**How to Avoid**:
+- Follow conventional commit format
+- Describe WHAT and WHY
+- Keep first line under 50 chars
+- Add details in commit body if needed
+
+**Example**:
+```
+❌ BAD:
+"fix bug"
+"updates"
+"WIP"
+
+✅ GOOD:
+"fix(auth): resolve token expiration bug in refresh flow"
+"feat(api): add pagination support to user list endpoint"
+"docs(readme): update installation instructions for Node 18"
+```
+
+---
+
+### 16. Large, Unfocused Pull Requests
+
+**Mistake**: Creating PRs that change too many things at once.
+
+**Why It's Bad**:
+- Harder to review
+- More likely to have bugs
+- Difficult to roll back
+- Slows down team
+
+**How to Avoid**:
+- Keep PRs small and focused
+- One feature/fix per PR
+- Split large features into smaller PRs
+- Review your own PR before requesting review
+
+---
+
+## Testing Mistakes
+
+### 17. Testing Implementation Instead of Behavior
+
+**Mistake**: Writing tests that are tightly coupled to implementation details.
+
+**Why It's Bad**:
+- Tests break on refactoring
+- Tests don't catch real bugs
+- Reduces confidence
+- Slows down development
+
+**How to Avoid**:
+- Test public APIs, not private methods
+- Focus on behavior, not implementation
+- Test inputs and outputs
+- Avoid mocking everything
+
+---
+
+### 18. Not Testing Edge Cases
+
+**Mistake**: Only testing happy paths and ignoring edge cases.
+
+**Why It's Bad**:
+- Bugs in edge cases reach production
+- Incomplete test coverage
+- False sense of security
+- Production incidents
+
+**How to Avoid**:
+- Test boundary conditions
+- Test error cases
+- Test empty/null inputs
+- Test concurrent scenarios
+
+---
+
+## How to Use This Document
+
+1. **Review regularly**: Familiarize yourself with these mistakes
+2. **Update continuously**: Add new mistakes as they're discovered
+3. **Share in code reviews**: Reference specific items when reviewing
+4. **Learn from incidents**: Document post-mortems here
+5. **Onboard new developers**: Make this required reading
+
+---
+
+**Last Updated**: [Date]
+
+**Contributors**: [List main contributors to this document]

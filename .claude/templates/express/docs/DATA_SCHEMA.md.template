@@ -1,0 +1,638 @@
+# {{PROJECT_NAME}} - Data Schema Documentation
+
+> Last Updated: {{CREATION_DATE}}
+> Database: MongoDB / PostgreSQL / MySQL
+> ORM: Mongoose / Prisma / Sequelize
+
+## Overview
+
+This document defines the data models, relationships, validation rules, and database schema for {{PROJECT_NAME}}.
+
+## Database Configuration
+
+### Connection Settings
+
+```javascript
+// config/database.js
+module.exports = {
+  development: {
+    url: process.env.DATABASE_URL,
+    options: {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      maxPoolSize: 10
+    }
+  },
+  production: {
+    url: process.env.DATABASE_URL,
+    options: {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      maxPoolSize: 50,
+      ssl: true
+    }
+  }
+};
+```
+
+## Entity Relationship Diagram
+
+```
+┌─────────────────┐          ┌─────────────────┐
+│      User       │          │      Post       │
+├─────────────────┤          ├─────────────────┤
+│ id (PK)         │──┐    ┌──│ id (PK)         │
+│ name            │  │    │  │ title           │
+│ email (unique)  │  │    │  │ content         │
+│ password        │  │    │  │ authorId (FK)   │
+│ role            │  │    │  │ published       │
+│ createdAt       │  │    │  │ tags[]          │
+│ updatedAt       │  │    │  │ createdAt       │
+└─────────────────┘  │    │  │ updatedAt       │
+                     │    │  └─────────────────┘
+                     │    │
+                     │    │  ┌─────────────────┐
+                     │    └──│    Comment      │
+                     │       ├─────────────────┤
+                     │       │ id (PK)         │
+                     │       │ content         │
+                     │       │ postId (FK)     │
+                     └───────│ authorId (FK)   │
+                             │ createdAt       │
+                             │ updatedAt       │
+                             └─────────────────┘
+```
+
+## Models
+
+### User Model
+
+**File**: `src/models/user.model.js`
+
+#### Schema Definition (Mongoose)
+
+```javascript
+const mongoose = require('mongoose');
+const bcrypt = require('bcrypt');
+
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Name is required'],
+    trim: true,
+    minlength: [2, 'Name must be at least 2 characters'],
+    maxlength: [50, 'Name must not exceed 50 characters']
+  },
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    lowercase: true,
+    trim: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email address']
+  },
+  password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: [8, 'Password must be at least 8 characters'],
+    select: false  // Don't include password in queries by default
+  },
+  role: {
+    type: String,
+    enum: {
+      values: ['user', 'admin'],
+      message: 'Role must be either user or admin'
+    },
+    default: 'user'
+  },
+  age: {
+    type: Number,
+    min: [18, 'User must be at least 18 years old'],
+    max: [120, 'Invalid age']
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  lastLogin: {
+    type: Date
+  }
+}, {
+  timestamps: true,  // Adds createdAt and updatedAt
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Indexes
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ createdAt: -1 });
+
+// Virtual properties
+userSchema.virtual('posts', {
+  ref: 'Post',
+  localField: '_id',
+  foreignField: 'author'
+});
+
+// Instance methods
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+userSchema.methods.toJSON = function() {
+  const obj = this.toObject();
+  delete obj.password;
+  return obj;
+};
+
+// Static methods
+userSchema.statics.findByEmail = function(email) {
+  return this.findOne({ email: email.toLowerCase() });
+};
+
+// Hooks/Middleware
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+
+  this.password = await bcrypt.hash(this.password, 10);
+  next();
+});
+
+module.exports = mongoose.model('User', userSchema);
+```
+
+#### Validation Rules
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| name | String | Yes | 2-50 characters |
+| email | String | Yes | Valid email, unique |
+| password | String | Yes | Min 8 characters |
+| role | String | No | 'user' or 'admin', default: 'user' |
+| age | Number | No | 18-120 |
+| isActive | Boolean | No | Default: true |
+| lastLogin | Date | No | - |
+
+#### Indexes
+
+- `email`: Unique index for fast email lookups
+- `createdAt`: Descending index for sorting
+
+### Post Model
+
+**File**: `src/models/post.model.js`
+
+#### Schema Definition (Mongoose)
+
+```javascript
+const mongoose = require('mongoose');
+
+const postSchema = new mongoose.Schema({
+  title: {
+    type: String,
+    required: [true, 'Title is required'],
+    trim: true,
+    minlength: [3, 'Title must be at least 3 characters'],
+    maxlength: [100, 'Title must not exceed 100 characters']
+  },
+  content: {
+    type: String,
+    required: [true, 'Content is required'],
+    minlength: [10, 'Content must be at least 10 characters']
+  },
+  author: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Author is required']
+  },
+  tags: [{
+    type: String,
+    trim: true,
+    lowercase: true
+  }],
+  published: {
+    type: Boolean,
+    default: false
+  },
+  publishedAt: {
+    type: Date
+  },
+  views: {
+    type: Number,
+    default: 0
+  },
+  likes: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  }]
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Indexes
+postSchema.index({ author: 1, createdAt: -1 });
+postSchema.index({ published: 1, publishedAt: -1 });
+postSchema.index({ tags: 1 });
+postSchema.index({ title: 'text', content: 'text' });  // Text search
+
+// Virtual properties
+postSchema.virtual('comments', {
+  ref: 'Comment',
+  localField: '_id',
+  foreignField: 'post'
+});
+
+postSchema.virtual('likesCount').get(function() {
+  return this.likes ? this.likes.length : 0;
+});
+
+// Instance methods
+postSchema.methods.incrementViews = function() {
+  this.views += 1;
+  return this.save();
+};
+
+postSchema.methods.publish = function() {
+  this.published = true;
+  this.publishedAt = new Date();
+  return this.save();
+};
+
+// Static methods
+postSchema.statics.findPublished = function(options = {}) {
+  return this.find({ published: true })
+    .sort({ publishedAt: -1 })
+    .limit(options.limit || 10)
+    .populate('author', 'name email');
+};
+
+// Hooks
+postSchema.pre(/^find/, function(next) {
+  // Populate author for all find queries
+  this.populate({
+    path: 'author',
+    select: 'name email'
+  });
+  next();
+});
+
+module.exports = mongoose.model('Post', postSchema);
+```
+
+#### Validation Rules
+
+| Field | Type | Required | Validation |
+|-------|------|----------|------------|
+| title | String | Yes | 3-100 characters |
+| content | String | Yes | Min 10 characters |
+| author | ObjectId | Yes | Valid User ID |
+| tags | Array[String] | No | Array of lowercase strings |
+| published | Boolean | No | Default: false |
+| publishedAt | Date | No | Set when published |
+| views | Number | No | Default: 0 |
+| likes | Array[ObjectId] | No | Array of User IDs |
+
+#### Indexes
+
+- `author + createdAt`: For author's posts sorted by date
+- `published + publishedAt`: For published posts
+- `tags`: For filtering by tags
+- `title + content`: Full-text search index
+
+### Comment Model
+
+**File**: `src/models/comment.model.js`
+
+#### Schema Definition (Mongoose)
+
+```javascript
+const mongoose = require('mongoose');
+
+const commentSchema = new mongoose.Schema({
+  content: {
+    type: String,
+    required: [true, 'Comment content is required'],
+    trim: true,
+    minlength: [1, 'Comment must not be empty'],
+    maxlength: [500, 'Comment must not exceed 500 characters']
+  },
+  post: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Post',
+    required: [true, 'Post reference is required']
+  },
+  author: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: [true, 'Author is required']
+  },
+  parentComment: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Comment',
+    default: null  // For nested comments/replies
+  },
+  isEdited: {
+    type: Boolean,
+    default: false
+  },
+  editedAt: {
+    type: Date
+  }
+}, {
+  timestamps: true,
+  toJSON: { virtuals: true },
+  toObject: { virtuals: true }
+});
+
+// Indexes
+commentSchema.index({ post: 1, createdAt: -1 });
+commentSchema.index({ author: 1 });
+commentSchema.index({ parentComment: 1 });
+
+// Virtual properties
+commentSchema.virtual('replies', {
+  ref: 'Comment',
+  localField: '_id',
+  foreignField: 'parentComment'
+});
+
+// Instance methods
+commentSchema.methods.edit = function(newContent) {
+  this.content = newContent;
+  this.isEdited = true;
+  this.editedAt = new Date();
+  return this.save();
+};
+
+// Hooks
+commentSchema.pre(/^find/, function(next) {
+  this.populate({
+    path: 'author',
+    select: 'name'
+  });
+  next();
+});
+
+module.exports = mongoose.model('Comment', commentSchema);
+```
+
+## Relationships
+
+### One-to-Many Relationships
+
+#### User → Posts
+- One user can have many posts
+- Foreign key: `Post.author` references `User._id`
+- Cascade: When user is deleted, their posts can be:
+  - Deleted (cascade delete)
+  - Set to null (soft delete)
+  - Transferred to another user
+
+#### Post → Comments
+- One post can have many comments
+- Foreign key: `Comment.post` references `Post._id`
+- Cascade: When post is deleted, delete all comments
+
+#### User → Comments
+- One user can have many comments
+- Foreign key: `Comment.author` references `User._id`
+
+### Self-Referential Relationship
+
+#### Comment → Replies
+- One comment can have many replies
+- Foreign key: `Comment.parentComment` references `Comment._id`
+- Use case: Nested comment threads
+
+## Data Access Patterns
+
+### Common Queries
+
+#### Get User with Posts
+```javascript
+const user = await User.findById(userId).populate('posts');
+```
+
+#### Get Post with Author and Comments
+```javascript
+const post = await Post.findById(postId)
+  .populate('author', 'name email')
+  .populate({
+    path: 'comments',
+    populate: {
+      path: 'author',
+      select: 'name'
+    }
+  });
+```
+
+#### Get Published Posts with Pagination
+```javascript
+const posts = await Post.find({ published: true })
+  .sort({ publishedAt: -1 })
+  .skip((page - 1) * limit)
+  .limit(limit)
+  .populate('author', 'name')
+  .lean();
+```
+
+#### Search Posts by Text
+```javascript
+const posts = await Post.find(
+  { $text: { $search: searchTerm } },
+  { score: { $meta: 'textScore' } }
+).sort({ score: { $meta: 'textScore' } });
+```
+
+## Validation Examples
+
+### Custom Validators
+
+```javascript
+// src/validators/user.validator.js
+const { body } = require('express-validator');
+
+exports.createUserSchema = [
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Name is required')
+    .isLength({ min: 2, max: 50 }).withMessage('Name must be 2-50 characters'),
+
+  body('email')
+    .trim()
+    .notEmpty().withMessage('Email is required')
+    .isEmail().withMessage('Invalid email format')
+    .normalizeEmail(),
+
+  body('password')
+    .notEmpty().withMessage('Password is required')
+    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain uppercase, lowercase, and number'),
+
+  body('age')
+    .optional()
+    .isInt({ min: 18, max: 120 }).withMessage('Age must be between 18 and 120')
+];
+
+exports.updateUserSchema = [
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 50 }).withMessage('Name must be 2-50 characters'),
+
+  body('age')
+    .optional()
+    .isInt({ min: 18, max: 120 }).withMessage('Age must be between 18 and 120')
+];
+```
+
+## Database Migrations
+
+### Migration Example (Prisma)
+
+```prisma
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String   @db.VarChar(50)
+  email     String   @unique @db.VarChar(255)
+  password  String
+  role      Role     @default(USER)
+  age       Int?
+  isActive  Boolean  @default(true)
+  lastLogin DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  posts     Post[]
+  comments  Comment[]
+
+  @@index([email])
+  @@index([createdAt])
+}
+
+model Post {
+  id          String   @id @default(uuid())
+  title       String   @db.VarChar(100)
+  content     String   @db.Text
+  published   Boolean  @default(false)
+  publishedAt DateTime?
+  views       Int      @default(0)
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  authorId    String
+  author      User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments    Comment[]
+
+  @@index([authorId, createdAt])
+  @@index([published, publishedAt])
+}
+
+model Comment {
+  id              String   @id @default(uuid())
+  content         String   @db.VarChar(500)
+  isEdited        Boolean  @default(false)
+  editedAt        DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  postId          String
+  post            Post     @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  authorId        String
+  author          User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  parentCommentId String?
+  parentComment   Comment? @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies         Comment[] @relation("CommentReplies")
+
+  @@index([postId, createdAt])
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+```
+
+## Seeding Data
+
+### Seed Script Example
+
+```javascript
+// scripts/seed.js
+const User = require('../src/models/user.model');
+const Post = require('../src/models/post.model');
+
+async function seed() {
+  // Clear existing data
+  await User.deleteMany({});
+  await Post.deleteMany({});
+
+  // Create users
+  const users = await User.create([
+    {
+      name: 'Admin User',
+      email: 'admin@example.com',
+      password: 'Admin123!',
+      role: 'admin'
+    },
+    {
+      name: 'Test User',
+      email: 'test@example.com',
+      password: 'Test123!',
+      role: 'user'
+    }
+  ]);
+
+  // Create posts
+  await Post.create([
+    {
+      title: 'First Post',
+      content: 'This is the first post content.',
+      author: users[0]._id,
+      published: true,
+      publishedAt: new Date(),
+      tags: ['tech', 'node']
+    }
+  ]);
+
+  console.log('Database seeded successfully');
+}
+```
+
+## Performance Optimization
+
+### Indexing Strategy
+
+1. **Single Field Indexes**: On frequently queried fields (email, createdAt)
+2. **Compound Indexes**: On commonly queried combinations (author + createdAt)
+3. **Text Indexes**: For full-text search (title, content)
+4. **Unique Indexes**: On unique fields (email)
+
+### Query Optimization
+
+1. Use `.lean()` for read-only queries (faster, returns plain JS objects)
+2. Use `.select()` to fetch only needed fields
+3. Implement pagination for large datasets
+4. Use aggregation pipeline for complex queries
+5. Cache frequently accessed data (Redis)
+
+---
+
+**Database Schema for {{PROJECT_NAME}}**
+
+Update this document when adding new models or modifying existing schemas.

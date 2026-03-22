@@ -1,0 +1,371 @@
+# {{PROJECT_NAME}} - Database Schema Design
+
+Generated: {{CREATION_DATE}}
+
+## Principles
+
+1. **Every table has:** `id`, `createdAt`, `updatedAt`
+2. **Use CUIDs** for IDs (Collision-resistant Unique IDs)
+3. **Soft delete** with `deletedAt` (don't use `isDeleted` boolean)
+4. **Indexed foreign keys** always
+5. **Enum types** in database, not application strings
+
+## Schema Conventions
+
+### Naming
+
+- **Models**: Singular, PascalCase (User, Post, Comment)
+- **Fields**: camelCase (firstName, createdAt, authorId)
+- **Relations**: Descriptive (author, posts, comments)
+- **Enums**: PascalCase (UserRole, PostStatus)
+
+### Standard Fields
+
+Every model MUST have:
+```prisma
+model Example {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?  // For soft delete
+}
+```
+
+### Example Model
+
+```prisma
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String?
+  lastName  String?
+  role      UserRole @default(USER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  // Relations
+  posts     Post[]
+  comments  Comment[]
+
+  // Indexes
+  @@index([email])
+  @@index([deletedAt])
+  @@index([role])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+```
+
+## Migration Workflow
+
+### Creating a Migration
+
+```bash
+# 1. Edit schema
+vim prisma/schema.prisma
+
+# 2. Create migration with descriptive name
+npm run db:migration -- --name add_user_role_field
+
+# 3. Review generated SQL
+cat prisma/migrations/[timestamp]_add_user_role_field/migration.sql
+
+# 4. Apply migration
+npm run db:push
+
+# 5. Generate Prisma Client
+npm run db:generate
+```
+
+### Migration Best Practices
+
+**DO:**
+- ✅ Create migration for every schema change
+- ✅ Use descriptive names: `add_user_role`, `create_posts_table`
+- ✅ Test migration on dev database first
+- ✅ Add `@@index` for frequently queried columns
+- ✅ Review generated SQL before applying
+
+**DON'T:**
+- ❌ Edit existing migration files
+- ❌ Skip migrations (direct schema edit)
+- ❌ Delete migrations from `prisma/migrations/`
+- ❌ Forget to run `prisma generate` after migration
+- ❌ Commit without testing migration
+
+## Common Patterns
+
+### Soft Delete
+
+```prisma
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  deletedAt DateTime?
+
+  @@index([deletedAt])
+}
+```
+
+**Query active records:**
+```typescript
+const activePosts = await prisma.post.findMany({
+  where: { deletedAt: null }
+})
+```
+
+**Soft delete:**
+```typescript
+await prisma.post.update({
+  where: { id },
+  data: { deletedAt: new Date() }
+})
+```
+
+### One-to-Many Relationships
+
+```prisma
+model User {
+  id    String @id @default(cuid())
+  posts Post[]
+}
+
+model Post {
+  id       String @id @default(cuid())
+  author   User   @relation(fields: [authorId], references: [id])
+  authorId String
+
+  @@index([authorId])
+}
+```
+
+### Many-to-Many Relationships
+
+```prisma
+model Post {
+  id   String @id @default(cuid())
+  tags Tag[]  @relation("PostTags")
+}
+
+model Tag {
+  id    String @id @default(cuid())
+  name  String @unique
+  posts Post[] @relation("PostTags")
+}
+
+// Prisma automatically creates join table: _PostTags
+```
+
+**Explicit join table:**
+```prisma
+model Post {
+  id       String     @id @default(cuid())
+  postTags PostTag[]
+}
+
+model Tag {
+  id       String     @id @default(cuid())
+  postTags PostTag[]
+}
+
+model PostTag {
+  post      Post     @relation(fields: [postId], references: [id])
+  postId    String
+  tag       Tag      @relation(fields: [tagId], references: [id])
+  tagId     String
+  createdAt DateTime @default(now())
+
+  @@id([postId, tagId])
+  @@index([postId])
+  @@index([tagId])
+}
+```
+
+### Polymorphic Relations (Workaround)
+
+Prisma doesn't support polymorphic relations natively. Workaround:
+
+```prisma
+model Comment {
+  id        String  @id @default(cuid())
+  content   String
+
+  // Explicit relations for each type
+  postId    String?
+  post      Post?   @relation(fields: [postId], references: [id])
+
+  articleId String?
+  article   Article? @relation(fields: [articleId], references: [id])
+
+  // Ensure only one is set
+  @@check(raw: "(postId IS NOT NULL AND articleId IS NULL) OR (postId IS NULL AND articleId IS NOT NULL)")
+}
+```
+
+### Audit Trail
+
+```prisma
+model AuditLog {
+  id        String   @id @default(cuid())
+  action    String   // "CREATE", "UPDATE", "DELETE"
+  tableName String
+  recordId  String
+  changes   Json     // Store diff as JSON
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([tableName, recordId])
+  @@index([userId])
+  @@index([createdAt])
+}
+```
+
+### Timestamps with Time Zones
+
+```prisma
+model Event {
+  id        String   @id @default(cuid())
+  name      String
+  startAt   DateTime // Stored in UTC
+  endAt     DateTime
+  timezone  String   // Store user timezone: "America/New_York"
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+```
+
+## Indexing Strategy
+
+### When to Add Indexes
+
+Add `@@index` for:
+- Foreign keys (always)
+- Fields used in WHERE clauses
+- Fields used for sorting (ORDER BY)
+- Unique constraints
+
+```prisma
+model Post {
+  id        String   @id
+  title     String
+  published Boolean
+  authorId  String
+  createdAt DateTime
+
+  author User @relation(fields: [authorId], references: [id])
+
+  @@index([authorId])      // Foreign key
+  @@index([published])     // Filter by published
+  @@index([createdAt])     // Sort by date
+  @@index([authorId, published])  // Composite for both
+}
+```
+
+### Composite Indexes
+
+```prisma
+model Post {
+  authorId  String
+  published Boolean
+  createdAt DateTime
+
+  // Composite index for common query:
+  // WHERE authorId = ? AND published = true ORDER BY createdAt DESC
+  @@index([authorId, published, createdAt])
+}
+```
+
+## Validation
+
+### Field-Level Constraints
+
+```prisma
+model User {
+  email    String  @unique
+  age      Int     @default(0)
+  role     UserRole @default(USER)
+
+  // Check constraint (PostgreSQL)
+  @@check(raw: "age >= 0 AND age <= 150")
+}
+```
+
+### Application-Level Validation
+
+Use Zod for input validation:
+
+```typescript
+import { z } from 'zod'
+
+const createUserSchema = z.object({
+  email: z.string().email(),
+  name: z.string().min(1).max(100),
+  age: z.number().min(0).max(150).optional()
+})
+
+// In API route
+const body = createUserSchema.parse(await req.json())
+```
+
+## Performance Tips
+
+1. **Select only needed fields:**
+```typescript
+const users = await prisma.user.findMany({
+  select: { id: true, name: true }  // Don't fetch everything
+})
+```
+
+2. **Use pagination:**
+```typescript
+const posts = await prisma.post.findMany({
+  take: 20,
+  skip: (page - 1) * 20
+})
+```
+
+3. **Batch operations:**
+```typescript
+// Bad: N+1 query
+for (const post of posts) {
+  await prisma.comment.findMany({ where: { postId: post.id } })
+}
+
+// Good: Single query with include
+const posts = await prisma.post.findMany({
+  include: { comments: true }
+})
+```
+
+4. **Use transactions:**
+```typescript
+await prisma.$transaction([
+  prisma.user.create({ data: userData }),
+  prisma.profile.create({ data: profileData })
+])
+```
+
+## Schema Evolution Checklist
+
+When changing schema:
+
+- [ ] Update `prisma/schema.prisma`
+- [ ] Run migration: `npm run db:migration -- --name descriptive_name`
+- [ ] Review generated SQL
+- [ ] Test migration on dev database
+- [ ] Update TypeScript types if needed
+- [ ] Run `npm run db:generate`
+- [ ] Update affected queries/mutations
+- [ ] Write tests for schema changes
+- [ ] Update this documentation
+- [ ] Commit migration files

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__serena__list_dir",
+      "Bash(gemini:*)",
+      "Bash(find:*)",
+      "Bash(grep:*)",
+      "mcp__serena__think_about_task_adherence",
+      "mcp__serena__initial_instructions"
+    ],
+    "deny": []
+  }
+}

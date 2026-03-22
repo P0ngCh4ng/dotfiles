@@ -1,0 +1,620 @@
+# {{PROJECT_NAME}} - Architecture Documentation
+
+> Last Updated: {{CREATION_DATE}}
+
+## Overview
+
+This Express.js application follows a **layered MVC architecture with a service layer** to ensure clear separation of concerns, maintainability, and testability.
+
+## Architecture Diagram
+
+### Request Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         HTTP Request                             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     Express Middleware                           │
+│  • CORS                                                          │
+│  • Body Parser                                                   │
+│  • Logger (Morgan)                                               │
+│  • Security (Helmet)                                             │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Routes Layer                                  │
+│  • URL mapping                                                   │
+│  • HTTP method definition                                        │
+│  • Route-specific middleware                                     │
+│  • Validation middleware                                         │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                  Controller Layer                                │
+│  • Extract request data                                          │
+│  • Call service methods                                          │
+│  • Format responses                                              │
+│  • Handle HTTP status codes                                      │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                   Service Layer                                  │
+│  • Business logic                                                │
+│  • Data validation                                               │
+│  • Transaction management                                        │
+│  • External API calls                                            │
+│  • Data transformation                                           │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    Model Layer                                   │
+│  • Database schema                                               │
+│  • Data validation rules                                         │
+│  • Model methods                                                 │
+└────────────────────────────┬────────────────────────────────────┘
+                             │
+                             ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        Database                                  │
+│  • MongoDB / PostgreSQL / MySQL                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Error Flow
+
+```
+Error Thrown
+    ↓
+Caught in Controller (try-catch)
+    ↓
+Passed to next(error)
+    ↓
+Global Error Handler Middleware
+    ↓
+Formatted Error Response
+    ↓
+HTTP Response (4xx/5xx)
+```
+
+## Directory Structure
+
+```
+{{PROJECT_NAME}}/
+├── src/
+│   ├── routes/              # Route definitions
+│   │   ├── index.js         # Main router aggregator
+│   │   ├── users.routes.js  # User routes
+│   │   └── posts.routes.js  # Post routes
+│   │
+│   ├── controllers/         # Request handlers
+│   │   ├── users.controller.js
+│   │   └── posts.controller.js
+│   │
+│   ├── services/            # Business logic
+│   │   ├── users.service.js
+│   │   └── posts.service.js
+│   │
+│   ├── models/              # Data models
+│   │   ├── user.model.js
+│   │   └── post.model.js
+│   │
+│   ├── middlewares/         # Custom middleware
+│   │   ├── auth.middleware.js
+│   │   ├── validate.middleware.js
+│   │   ├── error.middleware.js
+│   │   └── logging.middleware.js
+│   │
+│   ├── utils/               # Utility functions
+│   │   ├── errors.js        # Custom error classes
+│   │   ├── asyncHandler.js  # Async wrapper
+│   │   ├── logger.js        # Winston logger
+│   │   └── helpers.js       # Helper functions
+│   │
+│   ├── config/              # Configuration
+│   │   ├── database.js      # DB configuration
+│   │   ├── env.js           # Environment variables
+│   │   └── constants.js     # App constants
+│   │
+│   ├── validators/          # Validation schemas
+│   │   ├── user.validator.js
+│   │   └── post.validator.js
+│   │
+│   ├── app.js               # Express app setup
+│   └── server.js            # Server entry point
+│
+├── tests/                   # Test files
+│   ├── unit/
+│   │   ├── services/
+│   │   └── utils/
+│   └── integration/
+│       └── routes/
+│
+├── .env                     # Environment variables
+├── .env.example             # Environment template
+├── .gitignore
+├── package.json
+└── README.md
+```
+
+## Layer Responsibilities
+
+### 1. Routes Layer (`src/routes/`)
+
+**Purpose**: Define API endpoints and map them to controllers
+
+**What it should do**:
+- Define URL patterns (e.g., `/api/v1/users/:id`)
+- Specify HTTP methods (GET, POST, PUT, DELETE)
+- Apply route-specific middleware
+- Apply validation schemas
+- Route to appropriate controller methods
+
+**What it should NOT do**:
+- Contain business logic
+- Access databases
+- Format responses
+- Handle errors (beyond passing to next)
+
+**Example**:
+```javascript
+// src/routes/users.routes.js
+const express = require('express');
+const router = express.Router();
+const userController = require('../controllers/users.controller');
+const { authenticate } = require('../middlewares/auth.middleware');
+const { validate } = require('../middlewares/validate.middleware');
+const { createUserSchema, updateUserSchema } = require('../validators/user.validator');
+
+router.get('/', userController.getAllUsers);
+router.get('/:id', userController.getUserById);
+router.post('/', validate(createUserSchema), userController.createUser);
+router.put('/:id', authenticate, validate(updateUserSchema), userController.updateUser);
+router.delete('/:id', authenticate, userController.deleteUser);
+
+module.exports = router;
+```
+
+### 2. Controllers Layer (`src/controllers/`)
+
+**Purpose**: Handle HTTP request/response cycle
+
+**What it should do**:
+- Extract data from request (body, params, query, headers)
+- Call appropriate service methods
+- Format responses using standard format
+- Set appropriate HTTP status codes
+- Handle async operations with try-catch
+- Pass errors to next() middleware
+
+**What it should NOT do**:
+- Contain business logic
+- Access databases or models directly
+- Perform data validation (should be done in middleware)
+- Make decisions about business rules
+
+**Example**:
+```javascript
+// src/controllers/users.controller.js
+const userService = require('../services/users.service');
+
+exports.getAllUsers = async (req, res, next) => {
+  try {
+    const { page = 1, limit = 10 } = req.query;
+    const result = await userService.getAllUsers({ page, limit });
+
+    res.status(200).json({
+      success: true,
+      data: result.users,
+      meta: {
+        page: result.page,
+        limit: result.limit,
+        total: result.total
+      }
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.createUser = async (req, res, next) => {
+  try {
+    const userData = req.body;
+    const user = await userService.createUser(userData);
+
+    res.status(201).json({
+      success: true,
+      data: user,
+      message: 'User created successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+```
+
+### 3. Services Layer (`src/services/`)
+
+**Purpose**: Implement business logic and orchestrate data operations
+
+**What it should do**:
+- Implement all business rules
+- Validate business constraints
+- Coordinate database operations
+- Handle data transformation
+- Manage transactions
+- Interact with external APIs
+- Throw descriptive errors
+
+**What it should NOT do**:
+- Access HTTP request/response objects
+- Format HTTP responses
+- Set status codes
+- Handle HTTP-specific concerns
+
+**Example**:
+```javascript
+// src/services/users.service.js
+const User = require('../models/user.model');
+const { ValidationError, NotFoundError, ConflictError } = require('../utils/errors');
+const bcrypt = require('bcrypt');
+
+exports.createUser = async (userData) => {
+  // Business validation
+  if (userData.age < 18) {
+    throw new ValidationError('User must be at least 18 years old');
+  }
+
+  // Check for duplicates
+  const existingUser = await User.findOne({ email: userData.email });
+  if (existingUser) {
+    throw new ConflictError('Email already in use');
+  }
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(userData.password, 10);
+
+  // Create user
+  const user = await User.create({
+    ...userData,
+    password: hashedPassword
+  });
+
+  // Remove sensitive data
+  const userObject = user.toObject();
+  delete userObject.password;
+
+  return userObject;
+};
+
+exports.getAllUsers = async ({ page, limit }) => {
+  const skip = (page - 1) * limit;
+
+  const [users, total] = await Promise.all([
+    User.find()
+      .select('-password')
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+    User.countDocuments()
+  ]);
+
+  return {
+    users,
+    page: parseInt(page),
+    limit: parseInt(limit),
+    total
+  };
+};
+```
+
+### 4. Models Layer (`src/models/`)
+
+**Purpose**: Define data structure and database schema
+
+**What it should do**:
+- Define database schema
+- Define validation rules at data level
+- Define indexes
+- Define model methods and statics
+- Define virtual properties
+- Define pre/post hooks
+
+**What it should NOT do**:
+- Contain business logic
+- Make HTTP requests
+- Format responses
+
+**Example (Mongoose)**:
+```javascript
+// src/models/user.model.js
+const mongoose = require('mongoose');
+
+const userSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: [true, 'Name is required'],
+    trim: true,
+    minlength: [2, 'Name must be at least 2 characters'],
+    maxlength: [50, 'Name must not exceed 50 characters']
+  },
+  email: {
+    type: String,
+    required: [true, 'Email is required'],
+    unique: true,
+    lowercase: true,
+    match: [/^\S+@\S+\.\S+$/, 'Please provide a valid email']
+  },
+  password: {
+    type: String,
+    required: [true, 'Password is required'],
+    minlength: [8, 'Password must be at least 8 characters']
+  },
+  age: {
+    type: Number,
+    min: [0, 'Age must be a positive number']
+  },
+  role: {
+    type: String,
+    enum: ['user', 'admin'],
+    default: 'user'
+  }
+}, {
+  timestamps: true
+});
+
+// Indexes
+userSchema.index({ email: 1 });
+
+// Virtual properties
+userSchema.virtual('fullName').get(function() {
+  return `${this.firstName} ${this.lastName}`;
+});
+
+module.exports = mongoose.model('User', userSchema);
+```
+
+### 5. Middleware Layer (`src/middlewares/`)
+
+**Purpose**: Intercept and process requests
+
+**Types**:
+- **Authentication**: Verify user identity
+- **Authorization**: Check user permissions
+- **Validation**: Validate request data
+- **Error Handling**: Process and format errors
+- **Logging**: Log request/response data
+
+**Example**:
+```javascript
+// src/middlewares/auth.middleware.js
+const jwt = require('jsonwebtoken');
+const { UnauthorizedError } = require('../utils/errors');
+const User = require('../models/user.model');
+
+exports.authenticate = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      throw new UnauthorizedError('No token provided');
+    }
+
+    const token = authHeader.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const user = await User.findById(decoded.id).select('-password');
+    if (!user) {
+      throw new UnauthorizedError('Invalid token');
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
+exports.authorize = (...roles) => {
+  return (req, res, next) => {
+    if (!roles.includes(req.user.role)) {
+      return next(new ForbiddenError('You do not have permission to perform this action'));
+    }
+    next();
+  };
+};
+```
+
+## Why Layered Architecture?
+
+### Benefits
+
+1. **Separation of Concerns**: Each layer has a single, well-defined responsibility
+2. **Maintainability**: Changes in one layer don't affect others
+3. **Testability**: Each layer can be tested independently
+4. **Reusability**: Services can be used by multiple controllers
+5. **Scalability**: Easy to add new features without breaking existing code
+6. **Code Organization**: Clear structure makes code easier to navigate
+7. **Team Collaboration**: Different team members can work on different layers
+
+### Why Services Layer?
+
+Controllers should be thin because:
+- Business logic can be reused across multiple controllers
+- Makes testing easier (can test business logic without HTTP)
+- Keeps controllers focused on HTTP concerns
+- Allows business logic to be used outside HTTP context (e.g., CLI, WebSocket)
+
+## Error Handling Strategy
+
+### Error Types
+
+1. **Operational Errors** (expected, handled gracefully):
+   - Validation errors
+   - Authentication failures
+   - Not found errors
+   - Duplicate entries
+
+2. **Programming Errors** (unexpected, should crash):
+   - Syntax errors
+   - Reference errors
+   - Type errors
+
+### Error Handling Flow
+
+```javascript
+// 1. Define custom errors
+class AppError extends Error {
+  constructor(message, statusCode, code) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    this.isOperational = true;
+  }
+}
+
+// 2. Throw in services
+throw new ValidationError('Invalid email format');
+
+// 3. Catch in controllers
+try {
+  await userService.createUser(userData);
+} catch (error) {
+  next(error);
+}
+
+// 4. Handle in global error middleware
+app.use((err, req, res, next) => {
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
+    success: false,
+    error: {
+      code: err.code || 'INTERNAL_ERROR',
+      message: err.isOperational ? err.message : 'Something went wrong'
+    }
+  });
+});
+```
+
+## Adding New Endpoints
+
+### Step-by-Step Guide
+
+1. **Define Model** (`src/models/post.model.js`):
+```javascript
+const postSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  content: { type: String, required: true },
+  author: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+});
+```
+
+2. **Create Validator** (`src/validators/post.validator.js`):
+```javascript
+const { body } = require('express-validator');
+
+exports.createPostSchema = [
+  body('title').notEmpty().trim().isLength({ min: 3, max: 100 }),
+  body('content').notEmpty().trim().isLength({ min: 10 })
+];
+```
+
+3. **Implement Service** (`src/services/posts.service.js`):
+```javascript
+exports.createPost = async (postData, userId) => {
+  const post = await Post.create({
+    ...postData,
+    author: userId
+  });
+  return post;
+};
+```
+
+4. **Create Controller** (`src/controllers/posts.controller.js`):
+```javascript
+exports.createPost = async (req, res, next) => {
+  try {
+    const post = await postService.createPost(req.body, req.user.id);
+    res.status(201).json({ success: true, data: post });
+  } catch (error) {
+    next(error);
+  }
+};
+```
+
+5. **Define Routes** (`src/routes/posts.routes.js`):
+```javascript
+router.post('/', authenticate, validate(createPostSchema), postController.createPost);
+```
+
+6. **Register Router** (`src/app.js`):
+```javascript
+app.use('/api/v1/posts', postRoutes);
+```
+
+## Middleware Chain
+
+### Example Request Chain
+
+```
+Request: POST /api/v1/users
+    ↓
+1. express.json() → Parse JSON body
+    ↓
+2. morgan() → Log request
+    ↓
+3. helmet() → Set security headers
+    ↓
+4. cors() → Handle CORS
+    ↓
+5. validate(createUserSchema) → Validate input
+    ↓
+6. userController.createUser → Handle request
+    ↓
+7. userService.createUser → Execute business logic
+    ↓
+8. User.create() → Save to database
+    ↓
+9. Format and send response
+```
+
+## Best Practices
+
+1. **Keep Controllers Thin**: 10-20 lines per method
+2. **Keep Services Fat**: All business logic here
+3. **Use Async/Await**: Avoid callback hell
+4. **Error Handling**: Always use try-catch with next(error)
+5. **Input Validation**: Use express-validator or Joi
+6. **Authentication**: Use JWT or sessions consistently
+7. **Logging**: Log all errors and important events
+8. **Environment Variables**: Use .env for configuration
+9. **API Versioning**: Use /api/v1/ prefix
+10. **Documentation**: Keep API docs updated
+
+## Performance Considerations
+
+1. **Database Queries**:
+   - Use indexes on frequently queried fields
+   - Use `.lean()` for read-only queries (Mongoose)
+   - Implement pagination
+   - Use projection to select only needed fields
+
+2. **Caching**:
+   - Cache frequently accessed data (Redis)
+   - Implement cache invalidation strategy
+
+3. **Compression**:
+   - Use compression middleware for responses
+
+4. **Rate Limiting**:
+   - Prevent abuse with rate limiting
+
+---
+
+**Remember**: The architecture is designed to keep code organized, maintainable, and testable. Follow the patterns consistently across all endpoints.

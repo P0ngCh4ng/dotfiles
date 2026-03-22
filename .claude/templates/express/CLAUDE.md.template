@@ -1,0 +1,432 @@
+# {{PROJECT_NAME}} - Express REST API
+
+> Created: {{CREATION_DATE}}
+> Framework: Express.js
+> Architecture: MVC with Service Layer
+
+## Architecture Rules
+
+This project follows a strict layered MVC architecture with clear separation of concerns.
+
+### Directory Structure
+
+```
+src/
+├── routes/          # Route definitions and URL mappings
+├── controllers/     # Request/response handling
+├── services/        # Business logic and data access
+├── models/          # Data models and validation schemas
+├── middlewares/     # Custom middleware functions
+├── utils/           # Utility functions
+├── config/          # Configuration files
+└── app.js           # Express app setup
+```
+
+### Layer Responsibilities
+
+#### 1. Routes (`src/routes/*.js`)
+- **Purpose**: Define API endpoints and HTTP methods
+- **Responsibilities**:
+  - Map URLs to controller methods
+  - Apply route-specific middleware
+  - Define route parameters and validation schemas
+- **Rules**:
+  - MUST only contain route definitions
+  - MUST NOT contain business logic
+  - MUST apply validation middleware
+  - File naming: `{resource}.routes.js` (e.g., `user.routes.js`)
+
+```javascript
+// ✅ CORRECT
+router.post('/users', validate(createUserSchema), userController.createUser);
+
+// ❌ WRONG - business logic in routes
+router.post('/users', (req, res) => {
+  const user = await User.create(req.body);
+  res.json(user);
+});
+```
+
+#### 2. Controllers (`src/controllers/*.js`)
+- **Purpose**: Handle HTTP request/response cycle
+- **Responsibilities**:
+  - Extract data from request (body, params, query)
+  - Call appropriate service methods
+  - Format responses using standard format
+  - Handle HTTP status codes
+- **Rules**:
+  - MUST NOT contain business logic
+  - MUST NOT access database directly
+  - MUST use try-catch with next(error) for async operations
+  - MUST return standardized responses
+  - File naming: `{resource}.controller.js`
+
+```javascript
+// ✅ CORRECT
+exports.createUser = async (req, res, next) => {
+  try {
+    const userData = req.body;
+    const user = await userService.createUser(userData);
+    res.status(201).json({
+      success: true,
+      data: user,
+      message: 'User created successfully'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// ❌ WRONG - business logic in controller
+exports.createUser = async (req, res, next) => {
+  try {
+    if (req.body.age < 18) {
+      throw new Error('Must be 18+');
+    }
+    const user = await User.create(req.body);
+    res.json(user);
+  } catch (error) {
+    next(error);
+  }
+};
+```
+
+#### 3. Services (`src/services/*.js`)
+- **Purpose**: Implement business logic and orchestrate data operations
+- **Responsibilities**:
+  - Implement business rules and validation
+  - Coordinate database operations
+  - Handle data transformation
+  - Interact with external APIs
+- **Rules**:
+  - MUST contain all business logic
+  - MUST be the ONLY layer accessing databases/models
+  - MUST throw descriptive errors
+  - MUST be framework-agnostic (no req, res, next)
+  - File naming: `{resource}.service.js`
+
+```javascript
+// ✅ CORRECT
+exports.createUser = async (userData) => {
+  // Business logic
+  if (userData.age < 18) {
+    throw new ValidationError('User must be at least 18 years old');
+  }
+
+  // Check for duplicates
+  const existingUser = await User.findOne({ email: userData.email });
+  if (existingUser) {
+    throw new ConflictError('Email already in use');
+  }
+
+  // Data access
+  const user = await User.create(userData);
+  return user;
+};
+```
+
+#### 4. Models (`src/models/*.js`)
+- **Purpose**: Define data structures and database schemas
+- **Responsibilities**:
+  - Define database schema (Mongoose, Sequelize, Prisma)
+  - Define data validation rules
+  - Define model methods and static functions
+- **Rules**:
+  - MUST NOT contain business logic
+  - File naming: `{resource}.model.js` (singular)
+
+#### 5. Middleware (`src/middlewares/*.js`)
+- **Purpose**: Intercept and process requests
+- **Responsibilities**:
+  - Authentication and authorization
+  - Request validation
+  - Logging
+  - Error handling
+- **Rules**:
+  - MUST call next() or send response
+  - MUST handle errors properly
+  - File naming: `{purpose}.middleware.js`
+
+### API Response Format
+
+All API responses MUST follow this standardized format:
+
+#### Success Response
+```javascript
+{
+  "success": true,
+  "data": {}, // or [] for arrays
+  "message": "Optional success message",
+  "meta": {    // Optional, for pagination
+    "page": 1,
+    "limit": 10,
+    "total": 100
+  }
+}
+```
+
+#### Error Response
+```javascript
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "User-friendly error message",
+    "details": []  // Optional, for validation errors
+  }
+}
+```
+
+### Error Handling Convention
+
+#### Custom Error Classes
+Create custom error classes in `src/utils/errors.js`:
+
+```javascript
+class AppError extends Error {
+  constructor(message, statusCode, code) {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+    this.isOperational = true;
+  }
+}
+
+class ValidationError extends AppError {
+  constructor(message, details = []) {
+    super(message, 400, 'VALIDATION_ERROR');
+    this.details = details;
+  }
+}
+
+class NotFoundError extends AppError {
+  constructor(resource) {
+    super(`${resource} not found`, 404, 'NOT_FOUND');
+  }
+}
+
+class ConflictError extends AppError {
+  constructor(message) {
+    super(message, 409, 'CONFLICT');
+  }
+}
+```
+
+#### Global Error Handler
+```javascript
+// src/middlewares/error.middleware.js
+exports.errorHandler = (err, req, res, next) => {
+  const statusCode = err.statusCode || 500;
+  const response = {
+    success: false,
+    error: {
+      code: err.code || 'INTERNAL_ERROR',
+      message: err.isOperational ? err.message : 'Something went wrong',
+    }
+  };
+
+  if (err.details) {
+    response.error.details = err.details;
+  }
+
+  // Log error
+  if (!err.isOperational) {
+    console.error('Unexpected Error:', err);
+  }
+
+  res.status(statusCode).json(response);
+};
+```
+
+### Middleware Usage Patterns
+
+#### 1. Validation Middleware
+```javascript
+// src/middlewares/validate.middleware.js
+const { validationResult } = require('express-validator');
+
+exports.validate = (validations) => {
+  return async (req, res, next) => {
+    await Promise.all(validations.map(validation => validation.run(req)));
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Validation failed',
+          details: errors.array()
+        }
+      });
+    }
+    next();
+  };
+};
+```
+
+#### 2. Authentication Middleware
+```javascript
+// src/middlewares/auth.middleware.js
+exports.authenticate = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+    if (!token) {
+      throw new UnauthorizedError('No token provided');
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = await User.findById(decoded.id);
+
+    if (!req.user) {
+      throw new UnauthorizedError('Invalid token');
+    }
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+```
+
+#### 3. Async Handler Wrapper
+```javascript
+// src/utils/asyncHandler.js
+exports.asyncHandler = (fn) => (req, res, next) => {
+  Promise.resolve(fn(req, res, next)).catch(next);
+};
+
+// Usage
+router.get('/users', asyncHandler(userController.getAllUsers));
+```
+
+### File Naming Conventions
+
+- **Routes**: `{resource}.routes.js` (plural) - e.g., `users.routes.js`
+- **Controllers**: `{resource}.controller.js` (plural) - e.g., `users.controller.js`
+- **Services**: `{resource}.service.js` (plural) - e.g., `users.service.js`
+- **Models**: `{resource}.model.js` (singular) - e.g., `user.model.js`
+- **Middleware**: `{purpose}.middleware.js` - e.g., `auth.middleware.js`
+- **Utils**: `{purpose}.js` - e.g., `logger.js`
+
+### Database Access Rules
+
+1. **ONLY services can access databases/models**
+2. Controllers MUST call services, never models directly
+3. Routes MUST NOT access databases
+4. Services should handle transactions if needed
+5. Use connection pooling for database connections
+
+### Request Flow
+
+```
+HTTP Request
+    ↓
+Router (apply middleware, validation)
+    ↓
+Controller (extract data, call service)
+    ↓
+Service (business logic, data access)
+    ↓
+Model (database operation)
+    ↓
+Service (transform data)
+    ↓
+Controller (format response)
+    ↓
+HTTP Response
+```
+
+## Development Workflow
+
+### Adding a New Endpoint
+
+1. Define model schema in `src/models/`
+2. Implement service logic in `src/services/`
+3. Create controller method in `src/controllers/`
+4. Define route and validation in `src/routes/`
+5. Register route in `src/app.js`
+6. Test endpoint with Postman/curl
+7. Update API documentation
+
+### Code Review Checklist
+
+- [ ] Controller has no business logic
+- [ ] Service contains all business logic
+- [ ] No direct database access in controllers
+- [ ] Async functions use try-catch and next(error)
+- [ ] Responses follow standard format
+- [ ] Errors use custom error classes
+- [ ] Validation middleware applied
+- [ ] Authentication/authorization checked
+- [ ] Input sanitization performed
+- [ ] Sensitive data not logged
+
+## Configuration
+
+### Environment Variables
+```
+NODE_ENV=development
+PORT=3000
+DATABASE_URL=mongodb://localhost:27017/{{PROJECT_NAME}}
+JWT_SECRET=your-secret-key
+LOG_LEVEL=debug
+```
+
+### App Structure
+```javascript
+// src/app.js
+const express = require('express');
+const app = express();
+
+// Global middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(cors());
+app.use(morgan('dev'));
+
+// Routes
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/posts', postRoutes);
+
+// Error handling
+app.use(errorHandler);
+
+module.exports = app;
+```
+
+## Testing
+
+- Unit tests: Test services independently
+- Integration tests: Test routes + controllers + services
+- Use Jest or Mocha + Chai
+- Mock database calls in unit tests
+- Use test database for integration tests
+
+## Security Best Practices
+
+1. Use helmet for security headers
+2. Implement rate limiting
+3. Sanitize user input
+4. Use parameterized queries (prevent SQL injection)
+5. Validate and sanitize all inputs
+6. Use HTTPS in production
+7. Implement CORS properly
+8. Store secrets in environment variables
+9. Hash passwords with bcrypt
+10. Implement JWT token expiration
+
+## Performance Optimization
+
+1. Use compression middleware
+2. Implement caching (Redis)
+3. Use database indexing
+4. Implement pagination
+5. Use connection pooling
+6. Optimize database queries
+7. Use CDN for static assets
+8. Implement request throttling
+
+---
+
+**Remember**: Follow the architecture strictly. Each layer has a specific purpose. Keep controllers thin, services fat, and routes clean.

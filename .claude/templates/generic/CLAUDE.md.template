@@ -1,0 +1,200 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Repository Overview
+
+[Brief description of what this project does and its primary purpose]
+
+## Architecture
+
+[High-level overview of the system architecture - see docs/ARCHITECTURE.md for details]
+
+## Development Principles
+
+### Clean Code Standards
+- **Meaningful Names**: Use descriptive, intention-revealing names for variables, functions, and classes
+- **Single Responsibility**: Each function/class should do one thing well
+- **DRY Principle**: Don't Repeat Yourself - extract common logic into reusable components
+- **KISS Principle**: Keep It Simple, Stupid - avoid unnecessary complexity
+- **Code Comments**: Write comments that explain WHY, not WHAT. Code should be self-documenting for the WHAT.
+
+### Testing Requirements
+- **Test Coverage**: Aim for minimum 80% code coverage
+- **Test First**: Write tests before implementation when possible (TDD)
+- **Test Pyramid**: More unit tests, fewer integration tests, even fewer E2E tests
+- **Test Naming**: Tests should clearly describe what they're testing and expected behavior
+- **Arrange-Act-Assert**: Structure tests clearly with setup, execution, and verification phases
+
+### Documentation Standards
+- **README**: Keep README.md up-to-date with setup instructions and basic usage
+- **Code Comments**: Document complex logic, edge cases, and business rules
+- **API Documentation**: Document all public APIs, function parameters, and return values
+- **Architecture Docs**: Maintain architecture documentation in docs/ARCHITECTURE.md
+- **Decision Log**: Record significant technical decisions in docs/ARCHITECTURE.md
+
+### Error Handling
+- **Fail Fast**: Validate inputs early and fail with clear error messages
+- **Graceful Degradation**: Handle errors gracefully without crashing
+- **Logging**: Log errors with sufficient context for debugging
+- **User-Friendly Messages**: Show helpful error messages to end users
+- **Resource Cleanup**: Always clean up resources (files, connections, etc.) in finally blocks or using appropriate patterns
+
+## Git Workflow
+
+### Branching Strategy
+- **main/master**: Production-ready code only
+- **develop**: Integration branch for features (if using Git Flow)
+- **feature/***: New features and enhancements
+- **fix/***: Bug fixes
+- **hotfix/***: Urgent production fixes
+
+### Commit Messages
+Follow conventional commits format:
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+
+Example:
+```
+feat(auth): add JWT token validation
+
+- Implement token expiry check
+- Add refresh token mechanism
+- Update security documentation
+
+Closes #123
+```
+
+### Pull Request Process
+1. Create feature branch from main/develop
+2. Write code following project standards
+3. Add/update tests
+4. Update documentation
+5. Run all quality checks
+6. Create PR with clear description
+7. Address review comments
+8. Merge after approval
+
+## Code Review Checklist
+
+### Functionality
+- [ ] Code does what it's supposed to do
+- [ ] Edge cases are handled
+- [ ] Error conditions are handled appropriately
+- [ ] No obvious bugs or logic errors
+
+### Code Quality
+- [ ] Code follows project style guide
+- [ ] Names are clear and descriptive
+- [ ] Functions are small and focused
+- [ ] No code duplication
+- [ ] Complex logic is commented
+
+### Testing
+- [ ] Tests are included for new functionality
+- [ ] Tests are meaningful and test the right things
+- [ ] All tests pass
+- [ ] Edge cases are tested
+- [ ] Test coverage meets requirements
+
+### Documentation
+- [ ] README updated if needed
+- [ ] API documentation updated
+- [ ] Complex logic is documented
+- [ ] Breaking changes are documented
+
+### Security
+- [ ] No sensitive data in code or logs
+- [ ] Input validation is present
+- [ ] No SQL injection vulnerabilities
+- [ ] No XSS vulnerabilities
+- [ ] Dependencies are up-to-date and secure
+
+### Performance
+- [ ] No obvious performance issues
+- [ ] Database queries are optimized
+- [ ] No N+1 query problems
+- [ ] Resources are properly released
+
+## File Organization
+
+### Recommended Structure
+```
+project-root/
+├── src/                    # Source code
+│   ├── core/              # Core business logic
+│   ├── utils/             # Utility functions
+│   ├── services/          # Service layer
+│   └── models/            # Data models
+├── tests/                 # Test files
+│   ├── unit/             # Unit tests
+│   ├── integration/      # Integration tests
+│   └── e2e/              # End-to-end tests
+├── docs/                  # Documentation
+│   ├── ARCHITECTURE.md   # Architecture documentation
+│   └── COMMON_MISTAKES.md # Known issues and mistakes
+├── scripts/               # Build and utility scripts
+├── .claude/              # Claude Code configuration
+│   ├── agents/           # Custom agents
+│   └── commands/         # Custom commands
+├── README.md             # Project overview and setup
+├── CLAUDE.md             # This file
+└── package.json          # Dependencies (if applicable)
+```
+
+### Naming Conventions
+- **Files**: Use consistent casing (kebab-case, snake_case, or camelCase based on language)
+- **Directories**: Use lowercase with hyphens or underscores
+- **Tests**: Name test files clearly (e.g., `user.test.js`, `test_user.py`)
+- **Constants**: Use UPPER_SNAKE_CASE for constants
+- **Classes**: Use PascalCase for class names
+- **Functions/Variables**: Use camelCase or snake_case based on language conventions
+
+## Common Commands
+
+[List common development commands here]
+
+```bash
+# Example commands (customize for your project)
+# Install dependencies
+# Run tests
+# Run linters
+# Build project
+# Start development server
+# Run production build
+```
+
+## Environment Setup
+
+[Describe environment setup requirements]
+
+### Prerequisites
+- [List required software and versions]
+
+### Configuration
+- [Describe configuration files and environment variables]
+
+## Dependencies
+
+[Describe how dependencies are managed and updated]
+
+## Deployment
+
+[Describe deployment process and requirements]
+
+## Troubleshooting
+
+[Common issues and their solutions]
+
+## Additional Resources
+
+- [Link to external documentation]
+- [Link to related repositories]
+- [Link to design documents]

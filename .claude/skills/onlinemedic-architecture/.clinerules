@@ -1,0 +1,26 @@
+# ONLINE MEDIC Architecture Skill
+
+## When to activate
+- User asks about "ONLINE MEDIC", "オンライン診療", "online consultation flow"
+- Questions about Google Forms/Calendar/Meets integration with LINE Bot
+- Implementing automated reminder/notification systems
+- Booking code or tracking code system design
+- Email to user ID mapping patterns
+- Cron-based background job architecture
+
+## What this skill provides
+- Complete patient journey flow from friend add to video consultation
+- Database schema (6 models) with relationships
+- Booking code system (CL-XXXXX) for cross-platform mapping
+- Email ↔ LINE ID mapping for Calendar attendee lookup
+- Cron job patterns (every 5 minutes) for form sync and reminders
+- Reminder deduplication strategy
+- Video call options (Google Meets vs LIFF)
+- Simplified architecture compared to ChatClinic (17 models → 6 models)
+
+## Key concepts
+- Booking codes bridge LINE and Google ecosystems
+- Email mapping is critical for Calendar → LINE notifications
+- Cron frequency balances timeliness with API rate limits
+- Reminder deduplication prevents spam
+- Separation: ChatClinic (hospital search/GPT) vs ONLINEMEDIC (consultations only)

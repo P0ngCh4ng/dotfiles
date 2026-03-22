@@ -1,178 +1,113 @@
-# Plan - Comprehensive Feature Planning with Multi-Agent Review
-
-Restate requirements, assess risks, and create a step-by-step implementation plan. WAIT for user CONFIRM before touching any code.
-
-$ARGUMENTS
-
+---
+description: Restate requirements, assess risks, and create step-by-step implementation plan. WAIT for user CONFIRM before touching any code.
 ---
 
-## Workflow
+# Plan Command
 
-### Phase 1: Requirements Analysis
+This command invokes the **planner** agent to create a comprehensive implementation plan before writing any code.
 
-1. **Restate Requirements**
-   - Parse user's request: $ARGUMENTS
-   - Clarify scope, constraints, acceptance criteria
-   - Identify ambiguities and ask clarifying questions if needed
+## What This Command Does
 
-2. **Context Gathering**
-   - Read relevant files (use Glob, Grep, Read tools)
-   - Understand existing architecture and patterns
-   - Identify related code that may be affected
-   - Check for existing tests and documentation
+1. **Restate Requirements** - Clarify what needs to be built
+2. **Identify Risks** - Surface potential issues and blockers
+3. **Create Step Plan** - Break down implementation into phases
+4. **Wait for Confirmation** - MUST receive user approval before proceeding
 
-3. **Requirement Validation**
-   - Verify requirements are complete and unambiguous
-   - Identify edge cases and potential issues
-   - Confirm understanding with user if unclear
+## When to Use
 
-### Phase 2: Multi-Agent Analysis
+Use `/plan` when:
+- Starting a new feature
+- Making significant architectural changes
+- Working on complex refactoring
+- Multiple files/components will be affected
+- Requirements are unclear or ambiguous
 
-**CRITICAL**: Launch the following agents in **PARALLEL** for comprehensive review:
+## How It Works
 
-1. **`planner` agent** - Architectural planning and implementation steps
-   - Break down requirements into concrete steps
-   - Identify file changes and dependencies
-   - Assess architectural impacts
-   - Suggest optimal implementation approach
+The planner agent will:
 
-2. **`code-reviewer` agent** - Quality and security pre-analysis
-   - Review proposed changes for security implications
-   - Check for potential code quality issues
-   - Identify best practices to follow
-   - Flag potential risks
+1. **Analyze the request** and restate requirements in clear terms
+2. **Break down into phases** with specific, actionable steps
+3. **Identify dependencies** between components
+4. **Assess risks** and potential blockers
+5. **Estimate complexity** (High/Medium/Low)
+6. **Present the plan** and WAIT for your explicit confirmation
 
-**Launch both agents simultaneously using Task tool:**
+## Example Usage
 
 ```
-Task({
-  subagent_type: "planner",
-  description: "Architectural planning",
-  prompt: "Analyze requirements and create detailed implementation plan: $ARGUMENTS\n\nContext: [gathered context]"
-})
+User: /plan I need to add real-time notifications when markets resolve
 
-Task({
-  subagent_type: "code-reviewer",
-  description: "Security and quality analysis",
-  prompt: "Review proposed changes for security, quality, and best practices: $ARGUMENTS\n\nContext: [gathered context]"
-})
+Agent (planner):
+# Implementation Plan: Real-Time Market Resolution Notifications
+
+## Requirements Restatement
+- Send notifications to users when markets they're watching resolve
+- Support multiple notification channels (in-app, email, webhook)
+- Ensure notifications are delivered reliably
+- Include market outcome and user's position result
+
+## Implementation Phases
+
+### Phase 1: Database Schema
+- Add notifications table with columns: id, user_id, market_id, type, status, created_at
+- Add user_notification_preferences table for channel preferences
+- Create indexes on user_id and market_id for performance
+
+### Phase 2: Notification Service
+- Create notification service in lib/notifications.ts
+- Implement notification queue using BullMQ/Redis
+- Add retry logic for failed deliveries
+- Create notification templates
+
+### Phase 3: Integration Points
+- Hook into market resolution logic (when status changes to "resolved")
+- Query all users with positions in market
+- Enqueue notifications for each user
+
+### Phase 4: Frontend Components
+- Create NotificationBell component in header
+- Add NotificationList modal
+- Implement real-time updates via Supabase subscriptions
+- Add notification preferences page
+
+## Dependencies
+- Redis (for queue)
+- Email service (SendGrid/Resend)
+- Supabase real-time subscriptions
+
+## Risks
+- HIGH: Email deliverability (SPF/DKIM required)
+- MEDIUM: Performance with 1000+ users per market
+- MEDIUM: Notification spam if markets resolve frequently
+- LOW: Real-time subscription overhead
+
+## Estimated Complexity: MEDIUM
+- Backend: 4-6 hours
+- Frontend: 3-4 hours
+- Testing: 2-3 hours
+- Total: 9-13 hours
+
+**WAITING FOR CONFIRMATION**: Proceed with this plan? (yes/no/modify)
 ```
 
-3. **Synthesize Agent Feedback**
-   - Combine insights from both agents
-   - Resolve any conflicts or inconsistencies
-   - Create unified, comprehensive plan
+## Important Notes
 
-### Phase 3: Risk Assessment
+**CRITICAL**: The planner agent will **NOT** write any code until you explicitly confirm the plan with "yes" or "proceed" or similar affirmative response.
 
-Identify and document:
-- **Technical Risks**: Breaking changes, performance impacts, compatibility issues
-- **Implementation Risks**: Complexity, dependencies, testing challenges
-- **Security Risks**: Authentication, authorization, data validation, injection vulnerabilities
-- **Mitigation Strategies**: For each identified risk
+If you want changes, respond with:
+- "modify: [your changes]"
+- "different approach: [alternative]"
+- "skip phase 2 and do phase 3 first"
 
-### Phase 4: Implementation Plan
+## Integration with Other Commands
 
-Generate step-by-step plan with:
+After planning:
+- Use `/tdd` to implement with test-driven development
+- Use `/build-fix` if build errors occur
+- Use `/code-review` to review completed implementation
 
-1. **File Operations**
-   | File Path | Operation | Description |
-   |-----------|-----------|-------------|
-   | path/to/file | Create/Modify/Delete | Brief description |
+## Related Agents
 
-2. **Implementation Steps**
-   - Step 1: [Detailed description with code snippets if needed]
-   - Step 2: [...]
-   - Step N: [...]
-
-3. **Testing Strategy**
-   - Unit tests to write
-   - Integration tests to add
-   - Manual testing steps
-   - Coverage targets
-
-4. **Documentation Updates**
-   - README updates
-   - API documentation
-   - Code comments
-   - Migration guides (if breaking changes)
-
-5. **Dependencies and Order**
-   - Sequential dependencies
-   - What can be done in parallel
-   - Critical path items
-
-### Phase 5: Plan Delivery
-
-**Save plan to `.claude/plans/<feature-name>.md`**
-
-**Present plan to user with:**
-- Executive summary
-- Key decisions and trade-offs
-- Risk assessment
-- Estimated complexity/effort
-- Next steps
-
-**WAIT for user confirmation before proceeding**
-
-Output:
-```
-## Plan Ready: <feature-name>
-
-[Executive Summary]
-
-**Key Decisions:**
-- Decision 1
-- Decision 2
-
-**Risks and Mitigations:**
-- Risk 1 → Mitigation 1
-- Risk 2 → Mitigation 2
-
-**Implementation Steps:**
-1. Step 1
-2. Step 2
-...
-
-**Saved to:** `.claude/plans/<feature-name>.md`
-
----
-
-**Please review the plan above. You can:**
-- ✅ **Approve**: Tell me to proceed with implementation
-- 📝 **Modify**: Request changes to the plan
-- ❌ **Reject**: Discuss alternative approaches
-```
-
----
-
-## Rules
-
-1. **Planning Only** - This command does NOT implement code, only creates plans
-2. **No Y/N Prompts** - Present plan and wait for user decision
-3. **Multi-Agent Required** - MUST launch planner + code-reviewer in parallel
-4. **Save Before Present** - Always save plan file before showing to user
-5. **Risk Assessment Mandatory** - Every plan must include risk analysis
-6. **Wait for Confirm** - Never auto-proceed to implementation
-
----
-
-## Auto-Launch Conditions
-
-This command automatically launches when user requests:
-- "Plan for [feature]"
-- "Design [feature]"
-- "How should I implement [feature]"
-- "Architecture for [feature]"
-- Keywords: "計画", "プラン", "設計"
-
----
-
-## Next Steps After Approval
-
-When user approves the plan:
-1. Implement according to plan steps
-2. Auto-launch `code-reviewer` after each significant code change
-3. Run tests after implementation
-4. Update documentation
-5. Commit with descriptive message
+This command invokes the `planner` agent located at:
+`~/.claude/agents/planner.md`

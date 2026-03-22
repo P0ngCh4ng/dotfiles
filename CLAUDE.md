@@ -36,6 +36,65 @@ The dotfiles system uses a symbolic linking approach where configuration files a
 - Git aliases include: `ga` (add), `gs` (status), `gp` (push), `gc` (commit), `gco` (checkout)
 - `gacp()` function: add all, commit with message, and push in one command
 
+### Claude Code in Emacs
+This environment uses Claude Code **exclusively within Emacs** (not terminal).
+
+**Package Setup**:
+- **Official package**: `claude-code` (from ELPA) - Provides core functionality, Transient UI, MCP integration
+- **Custom extension**: `claude-code-projects` - Adds predefined project shortcuts
+
+**Quick Start**:
+```elisp
+C-c c              # Open Claude Code Transient menu (main interface)
+C-c C-p            # Quick select from predefined projects
+```
+
+**Main Workflow (Transient Menu - `C-c c`)**:
+```
+c - Run Claude Code       # Start session in current project
+b - Switch to buffer      # Switch to Claude Code vterm
+p - Open prompt buffer    # Edit prompts in markdown
+q - Close window          # Close Claude Code window
+Q - Quit session          # Terminate Claude Code session
+```
+
+**Prompt Buffer** (`.claude-code.prompt.md`):
+```elisp
+@ TAB              # Complete file paths
+C-c C-s            # Send section at point
+C-c C-b            # Send entire buffer
+C-c C-o            # Run Claude Code
+```
+
+**Predefined Projects** (via `claude-code-projects`):
+- dotfiles
+- pon
+- sokko
+- chatclinic
+- AutomationVideo
+- mcpCreate
+
+**Project Management Commands**:
+```elisp
+M-x claude-code-select-project    # Select from predefined list
+M-x claude-code-add-project       # Add current directory to list
+M-x claude-code-remove-project    # Remove project from list
+M-x claude-code-edit-projects     # Customize project list
+```
+
+**Workflow Example**:
+1. `C-c C-p` → Select "dotfiles"
+2. `C-c c` → Opens Transient menu
+3. `p` → Open prompt buffer
+4. Type request with `@` file completion
+5. `C-c C-b` → Send to Claude Code
+6. Work in vterm buffer with Claude
+
+**Files**:
+- Package: `.emacs.d/elpa/claude-code-*/`
+- Extension: `.emacs.d/elisp/claude-code-projects.el`
+- Config: `.emacs.d/init.el` (lines 425-443)
+
 ### Project Management
 This dotfiles repository manages the **central project registry** (`projects.yml`) for all local projects on this machine.
 

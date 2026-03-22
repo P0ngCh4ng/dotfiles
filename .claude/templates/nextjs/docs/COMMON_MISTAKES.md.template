@@ -1,0 +1,365 @@
+# {{PROJECT_NAME}} - Common Mistakes & Solutions
+
+Generated: {{CREATION_DATE}}
+
+This document tracks common mistakes found in this project and their solutions.
+
+---
+
+## ❌ Mistake #1: Client Component Using fetch() Directly
+
+**Frequency:** Common
+**Last Occurrence:** -
+
+### Problem
+```tsx
+"use client"
+export function UserList() {
+  const [users, setUsers] = useState([])
+
+  useEffect(() => {
+    fetch('/api/users')  // ❌ Unnecessary client-side fetch
+      .then(res => res.json())
+      .then(data => setUsers(data))
+  }, [])
+
+  return <ul>{users.map(u => <li key={u.id}>{u.name}</li>)}</ul>
+}
+```
+
+### Why This Is Wrong
+- Adds unnecessary client-side JavaScript
+- Worse performance (client-side data fetching)
+- SEO issues (content not rendered on server)
+- More complex code (useState + useEffect boilerplate)
+
+### Solution
+Convert to Server Component:
+```tsx
+// Remove "use client", make it async
+export default async function UserList() {
+  const response = await fetch('/api/users')
+  const { data } = await response.json()
+
+  return <ul>{data.map(u => <li key={u.id}>{u.name}</li>)}</ul>
+}
+```
+
+**Detection Command:**
+```bash
+# Find Client Components fetching data
+grep -l '"use client"' src/features/*/components/*.tsx | \
+  xargs grep -l "fetch\|axios"
+```
+
+---
+
+## ❌ Mistake #2: Missing "use client" Directive
+
+**Frequency:** Very Common
+**Last Occurrence:** -
+
+### Problem
+```tsx
+export function SearchForm() {
+  const [query, setQuery] = useState('')  // ❌ Error: useState in Server Component
+
+  return <input onChange={e => setQuery(e.target.value)} />
+}
+```
+
+### Error Message
+```
+Error: useState only works in Client Components.
+Add the "use client" directive at the top of the file to use it.
+```
+
+### Solution
+```tsx
+"use client"  // ✅ Add this line at the very top
+
+export function SearchForm() {
+  const [query, setQuery] = useState('')
+  return <input onChange={e => setQuery(e.target.value)} />
+}
+```
+
+**Detection Command:**
+```bash
+# Find components with hooks but no "use client"
+grep -rl "useState\|useEffect\|useCallback" src/features/*/components | \
+  xargs grep -L '"use client"'
+```
+
+---
+
+## ❌ Mistake #3: API Response Not Wrapped in Standard Format
+
+**Frequency:** Common
+**Last Occurrence:** -
+
+### Problem
+```typescript
+export async function GET() {
+  const users = await prisma.user.findMany()
+  return NextResponse.json(users)  // ❌ Should be wrapped
+}
+```
+
+### Why This Is Wrong
+- Inconsistent API responses
+- Harder to add metadata later
+- Doesn't match API spec
+
+### Solution
+```typescript
+export async function GET() {
+  const users = await prisma.user.findMany()
+  return NextResponse.json({ data: users })  // ✅ Wrapped
+}
+```
+
+**Detection Command:**
+```bash
+# Find non-compliant API responses
+grep -r "NextResponse\.json" src/features/*/api/ | \
+  grep -v "{ data:" | \
+  grep -v "{ error:"
+```
+
+---
+
+## ❌ Mistake #4: File in Wrong Directory
+
+**Frequency:** Common
+**Last Occurrence:** -
+
+### Problem
+```
+src/components/auth/LoginForm.tsx  // ❌ Not feature-based
+src/utils/auth/helper.ts           // ❌ Not in lib/
+```
+
+### Solution
+```
+src/features/auth/components/LoginForm.tsx  // ✅ Feature-based
+src/lib/utils/auth/helper.ts                // ✅ Shared utilities
+```
+
+**Detection Command:**
+```bash
+# Find files outside feature structure
+find src -name "*.tsx" -o -name "*.ts" | \
+  grep -v "node_modules" | \
+  grep -v "features/.*/\(api\|components\|hooks\|types\)" | \
+  grep -v "lib/" | \
+  grep -v "config/"
+```
+
+---
+
+## ❌ Mistake #5: Direct Database Access in Client Component
+
+**Frequency:** Rare (compile error)
+**Last Occurrence:** -
+
+### Problem
+```tsx
+"use client"
+import { prisma } from '@/lib/db'
+
+export function UserList() {
+  const users = await prisma.user.findMany()  // ❌ Can't run in browser!
+  return <ul>...</ul>
+}
+```
+
+### Error Message
+```
+Error: Module not found: Can't resolve 'prisma/client'
+Prisma can only run on the server.
+```
+
+### Solution
+Option 1: Convert to Server Component
+```tsx
+// Remove "use client"
+export default async function UserList() {
+  const users = await prisma.user.findMany()
+  return <ul>...</ul>
+}
+```
+
+Option 2: Use API route
+```tsx
+"use client"
+export function UserList() {
+  const { data } = useSWR('/api/users', fetcher)
+  return <ul>...</ul>
+}
+```
+
+---
+
+## ❌ Mistake #6: Not Using TypeScript Strict Mode
+
+**Frequency:** Setup issue
+**Last Occurrence:** -
+
+### Problem
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "strict": false  // ❌ Missing type safety
+  }
+}
+```
+
+### Solution
+```json
+// tsconfig.json
+{
+  "compilerOptions": {
+    "strict": true,  // ✅ Enable all strict checks
+    "noUncheckedIndexedAccess": true,
+    "noImplicitReturns": true
+  }
+}
+```
+
+---
+
+## ❌ Mistake #7: Missing Error Handling in API Routes
+
+**Frequency:** Common
+**Last Occurrence:** -
+
+### Problem
+```typescript
+export async function POST(req: NextRequest) {
+  const body = await req.json()
+  const user = await prisma.user.create({ data: body })  // ❌ No try-catch
+  return NextResponse.json({ data: user })
+}
+```
+
+### Why This Is Wrong
+- Unhandled errors crash the API
+- No proper error messages to client
+- Security risk (exposes stack traces)
+
+### Solution
+```typescript
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const user = await prisma.user.create({ data: body })
+    return NextResponse.json({ data: user })
+  } catch (error) {
+    console.error('Error creating user:', error)
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code: 'INTERNAL_ERROR'
+      },
+      { status: 500 }
+    )
+  }
+}
+```
+
+---
+
+## ❌ Mistake #8: Forgetting to Run Prisma Generate
+
+**Frequency:** Common for new developers
+**Last Occurrence:** -
+
+### Problem
+```bash
+# After changing schema
+vim prisma/schema.prisma
+
+# Running migration
+npm run db:migration -- --name add_user_field
+
+# Forgetting this step:
+# npm run db:generate  ❌
+```
+
+### Error Message
+```
+Error: Type 'User' is missing the following properties from type '{ ... }'
+```
+
+### Solution
+```bash
+# Always run after schema changes
+npm run db:generate
+
+# Or add to migration script in package.json
+"db:migration": "prisma migrate dev && prisma generate"
+```
+
+---
+
+## 🔍 Automated Detection Scripts
+
+Save these in `.claude/scripts/`:
+
+### `detect-issues.sh`
+```bash
+#!/bin/bash
+echo "🔍 Scanning for common mistakes..."
+echo ""
+
+# Check 1: Client components without "use client"
+echo "1️⃣  Checking for missing 'use client'..."
+grep -rl "useState\|useEffect" src/features/*/components 2>/dev/null | \
+  xargs grep -L '"use client"' 2>/dev/null | \
+  while read file; do
+    echo "   ❌ $file"
+  done
+
+# Check 2: API responses not wrapped
+echo ""
+echo "2️⃣  Checking API response formats..."
+grep -r "NextResponse\.json" src/features/*/api/ 2>/dev/null | \
+  grep -v "{ data:" | \
+  grep -v "{ error:" | \
+  while read line; do
+    echo "   ❌ $line"
+  done
+
+# Check 3: Files in wrong directories
+echo ""
+echo "3️⃣  Checking file locations..."
+find src -name "*.tsx" -o -name "*.ts" 2>/dev/null | \
+  grep -v "node_modules" | \
+  grep -v "features/.*/\(api\|components\|hooks\|types\)" | \
+  grep -v "lib/" | \
+  grep -v "config/" | \
+  grep -v "app/" | \
+  while read file; do
+    echo "   ⚠️  $file (not in feature structure)"
+  done
+
+echo ""
+echo "✅ Scan complete"
+```
+
+---
+
+## 📝 Contributing to This Document
+
+When you encounter a new mistake:
+
+1. Add it to this file with:
+   - Problem description
+   - Why it's wrong
+   - Solution
+   - Detection command
+2. Update frequency counter
+3. Add detection script if applicable
+4. Consider adding to pre-commit hook

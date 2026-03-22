@@ -1,0 +1,181 @@
+# {{PROJECT_NAME}} - Architecture Rules
+
+Generated: {{CREATION_DATE}}
+
+## 🚨 Critical: Read This Before ANY Code Change
+
+### Directory Structure (MUST Follow)
+
+```
+src/
+├── features/              # Feature-based modules
+│   └── [feature-name]/
+│       ├── api/          # API routes only
+│       ├── components/   # UI components
+│       ├── hooks/        # React hooks
+│       ├── types/        # TypeScript types
+│       └── __tests__/    # Tests
+├── lib/                  # Shared utilities
+└── config/               # Configuration
+```
+
+**Verification Command:**
+```bash
+# Check if your new file matches the structure
+find src/features/{{EXAMPLE_FEATURE}} -type f
+```
+
+### Pre-Creation Checklist
+
+BEFORE creating any new file:
+- [ ] Run: `/verify-arch` to see current structure
+- [ ] Check: `docs/ARCHITECTURE.md` for similar patterns
+- [ ] Search: `find src/features -name "*similar*"` for examples
+
+### Component Conventions
+
+**Server Component (Default):**
+```tsx
+// No "use client" needed
+export default async function UserList() {
+  const users = await fetch('/api/users')
+  return <ul>{users.map(...)}</ul>
+}
+```
+
+**Client Component (Interactive):**
+```tsx
+"use client"  // MUST be first line
+
+import { useState } from 'react'
+
+export function SearchForm() {
+  const [query, setQuery] = useState('')
+  return <input onChange={e => setQuery(e.target.value)} />
+}
+```
+
+**Detection:**
+```bash
+# Find components missing "use client" directive
+grep -rl "useState\|useEffect" src/features/*/components | \
+  xargs grep -L '"use client"'
+```
+
+### API Design Rules
+
+**MUST use this exact response format:**
+```typescript
+// ✅ CORRECT
+return NextResponse.json({
+  data: result
+})
+
+// ❌ WRONG
+return NextResponse.json(result)
+```
+
+**Validation:**
+```bash
+# Find non-compliant API routes
+grep -r "NextResponse.json" src/features/*/api/ | grep -v "{ data:"
+```
+
+### Database Operations
+
+**NEVER:**
+- Modify migration files directly
+- Use `prisma.$rawQuery()` without review
+
+**ALWAYS:**
+```bash
+# Generate migration
+npm run db:migration -- --name add_user_role
+
+# Validate schema
+npm run db:validate
+
+# Check for conflicts
+git diff main prisma/schema.prisma
+```
+
+### Testing Requirements
+
+**Coverage threshold: 80%**
+```bash
+# After implementing feature
+npm run test:coverage -- src/features/[your-feature]
+
+# Must pass before commit
+npm run test:ci
+```
+
+## 📚 Progressive Disclosure
+
+詳細はこちら（必要な時だけ読む）:
+- **Architecture**: `docs/ARCHITECTURE.md`
+- **API Spec**: `docs/API_SPEC.md`
+- **Database Schema**: `docs/DATA_SCHEMA.md`
+- **Common Mistakes**: `docs/COMMON_MISTAKES.md`
+
+## 🔧 Quick Commands
+
+```bash
+# Verify architecture compliance
+/verify-arch
+
+# Scaffold new feature
+/scaffold-feature [name]
+
+# Run all validations
+npm run validate:all
+```
+
+## ⚠️ Enforcement
+
+This project uses:
+- **Custom Agent**: `architecture-enforcer` (auto-runs on file creation)
+- **Pre-commit Hook**: Validates structure before commit
+- **CI/CD**: Blocks PR if violations found
+
+## 🎯 File Naming Conventions
+
+- **Components**: `PascalCase.tsx` (UserProfile.tsx)
+- **Utilities**: `camelCase.ts` (formatDate.ts)
+- **Constants**: `UPPER_CASE.ts` (API_ENDPOINTS.ts)
+- **Types**: `index.ts` or `types.ts`
+
+## 📝 Common Operations
+
+### Adding a New Feature
+
+```bash
+# 1. Scaffold structure
+/scaffold-feature user-profile
+
+# 2. Add database model
+vim prisma/schema.prisma
+
+# 3. Generate migration
+npm run db:migration -- --name add_user_profile
+
+# 4. Implement components
+vim src/features/user-profile/components/ProfileCard.tsx
+
+# 5. Verify
+/verify-arch
+npm run test -- user-profile
+```
+
+### Debugging Architecture Issues
+
+```bash
+# Show current structure
+find src/features -type d
+
+# Find misplaced files
+find src -name "*.tsx" | grep -v "features/.*/\(components\|api\)"
+
+# Check API response formats
+grep -r "NextResponse.json" src/features/*/api/
+```

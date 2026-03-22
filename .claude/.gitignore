@@ -1,0 +1,31 @@
+# Claude Code temporary and cache files
+# These files should not be tracked in git
+
+# Conversation history
+history.jsonl
+mcp-needs-auth-cache.json
+stats-cache.json
+
+# Cache directories
+cache/
+file-history/
+paste-cache/
+shell-snapshots/
+debug/
+backups/
+session-env/
+statsig/
+telemetry/
+todos/
+local/
+
+# Plugin runtime data
+plugins/*/node_modules/
+plugins/*/.cache/
+
+# Task and project runtime data
+tasks/
+projects/
+
+# MCP temporary files
+.playwright-mcp/

@@ -1,0 +1,307 @@
+# {{PROJECT_NAME}} - API Specification
+
+Generated: {{CREATION_DATE}}
+
+## Base URL
+
+```
+Production:  https://{{PRODUCTION_URL}}/api/v1
+Development: http://localhost:3000/api/v1
+```
+
+## Authentication
+
+All endpoints require Bearer token except `/auth/*`:
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  http://localhost:3000/api/v1/users
+```
+
+## Standard Response Format
+
+### Success Response
+
+```json
+{
+  "data": {
+    // Resource data or array
+  },
+  "meta": {
+    "page": 1,
+    "perPage": 20,
+    "total": 100,
+    "totalPages": 5
+  }
+}
+```
+
+### Error Response
+
+```json
+{
+  "error": "Error message",
+  "code": "ERROR_CODE",
+  "details": []  // Optional validation details
+}
+```
+
+## Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `UNAUTHORIZED` | 401 | Invalid or missing authentication token |
+| `FORBIDDEN` | 403 | Insufficient permissions for resource |
+| `NOT_FOUND` | 404 | Resource not found |
+| `VALIDATION_ERROR` | 422 | Invalid input data |
+| `CONFLICT` | 409 | Resource already exists |
+| `INTERNAL_ERROR` | 500 | Server error |
+| `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable |
+
+## Common Headers
+
+### Request Headers
+
+```
+Content-Type: application/json
+Authorization: Bearer {token}
+X-Request-ID: {uuid}  // Optional, for request tracing
+```
+
+### Response Headers
+
+```
+Content-Type: application/json
+X-Request-ID: {uuid}
+X-RateLimit-Limit: 100
+X-RateLimit-Remaining: 95
+X-RateLimit-Reset: 1609459200
+```
+
+## Pagination
+
+All list endpoints support pagination:
+
+```bash
+GET /api/v1/users?page=1&perPage=20
+```
+
+**Parameters:**
+- `page` (number, default: 1): Page number
+- `perPage` (number, default: 20, max: 100): Items per page
+
+**Response:**
+```json
+{
+  "data": [...],
+  "meta": {
+    "page": 1,
+    "perPage": 20,
+    "total": 100,
+    "totalPages": 5
+  }
+}
+```
+
+## Filtering & Sorting
+
+### Filtering
+
+```bash
+GET /api/v1/users?filter[role]=admin&filter[status]=active
+```
+
+### Sorting
+
+```bash
+GET /api/v1/users?sort=-createdAt,name
+# - prefix for descending, no prefix for ascending
+```
+
+## Endpoint Examples
+
+### Users
+
+#### GET /users
+List all users with pagination.
+
+**Request:**
+```bash
+GET /api/v1/users?page=1&perPage=20
+```
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "user_123",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "role": "USER",
+      "createdAt": "2024-01-01T00:00:00Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "perPage": 20,
+    "total": 100
+  }
+}
+```
+
+#### GET /users/:id
+Get a single user by ID.
+
+**Request:**
+```bash
+GET /api/v1/users/user_123
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "user_123",
+    "email": "user@example.com",
+    "name": "John Doe",
+    "role": "USER",
+    "createdAt": "2024-01-01T00:00:00Z",
+    "updatedAt": "2024-01-02T00:00:00Z"
+  }
+}
+```
+
+#### POST /users
+Create a new user.
+
+**Request:**
+```bash
+POST /api/v1/users
+Content-Type: application/json
+
+{
+  "email": "new@example.com",
+  "name": "Jane Doe",
+  "password": "securePassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "user_124",
+    "email": "new@example.com",
+    "name": "Jane Doe",
+    "role": "USER",
+    "createdAt": "2024-01-03T00:00:00Z"
+  }
+}
+```
+
+#### PUT /users/:id
+Update an existing user.
+
+**Request:**
+```bash
+PUT /api/v1/users/user_123
+Content-Type: application/json
+
+{
+  "name": "John Smith"
+}
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "user_123",
+    "email": "user@example.com",
+    "name": "John Smith",
+    "updatedAt": "2024-01-04T00:00:00Z"
+  }
+}
+```
+
+#### DELETE /users/:id
+Delete a user.
+
+**Request:**
+```bash
+DELETE /api/v1/users/user_123
+```
+
+**Response:**
+```json
+{
+  "data": {
+    "id": "user_123",
+    "deleted": true
+  }
+}
+```
+
+## Validation Error Example
+
+**Request:**
+```bash
+POST /api/v1/users
+{
+  "email": "invalid-email",
+  "name": ""
+}
+```
+
+**Response (422):**
+```json
+{
+  "error": "Validation failed",
+  "code": "VALIDATION_ERROR",
+  "details": [
+    {
+      "field": "email",
+      "message": "Invalid email format"
+    },
+    {
+      "field": "name",
+      "message": "Name is required"
+    }
+  ]
+}
+```
+
+## Rate Limiting
+
+- **Rate**: 100 requests per minute per IP
+- **Headers**: Check `X-RateLimit-*` headers for current status
+- **Exceeded**: Returns 429 Too Many Requests
+
+```json
+{
+  "error": "Rate limit exceeded",
+  "code": "RATE_LIMIT_EXCEEDED",
+  "retryAfter": 60
+}
+```
+
+## Versioning
+
+- Current version: v1
+- Version specified in URL path: `/api/v1/`
+- Breaking changes will increment version number
+
+## Implementation Checklist
+
+When creating new API endpoint:
+
+- [ ] Follow `/api/v1/[resource]` path pattern
+- [ ] Use standard response format `{ data: ... }`
+- [ ] Add error handling with proper error codes
+- [ ] Validate input with Zod schema
+- [ ] Add authentication check (if needed)
+- [ ] Implement pagination for list endpoints
+- [ ] Write API tests
+- [ ] Update this document
+- [ ] Add to Postman/OpenAPI collection

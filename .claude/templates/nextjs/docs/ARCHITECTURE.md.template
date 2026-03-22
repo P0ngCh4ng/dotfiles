@@ -1,0 +1,401 @@
+# {{PROJECT_NAME}} - System Architecture
+
+Generated: {{CREATION_DATE}}
+
+## Overview
+
+This is a Next.js 14+ App Router application with:
+- **Frontend**: React Server Components + Client Components
+- **Backend**: API Routes + Server Actions
+- **Database**: PostgreSQL via Prisma
+- **State Management**: React Server Components (primary) + Zustand (client state)
+- **Authentication**: NextAuth.js
+
+## Data Flow
+
+```
+┌─────────┐
+│ Browser │
+└────┬────┘
+     │
+     ├──> Server Component ──> Direct DB Access (Prisma)
+     │
+     ├──> API Route ──> Service Layer ──> Repository ──> Database
+     │
+     └──> Client Component ──> Server Action ──> Service Layer
+```
+
+## Directory Structure Philosophy
+
+### Why Feature-Based?
+
+従来のレイヤー分割（pages/, components/, api/）ではなく、機能ごとに分離:
+
+**Benefits:**
+- 機能の追加/削除が容易（ディレクトリ単位）
+- 依存関係が明確（feature内で完結）
+- テストが書きやすい（関連コードが近接）
+- チーム開発時の競合が減少
+
+**Trade-offs:**
+- 共通コンポーネントの管理が複雑化 → `src/lib/components/` で解決
+- 初期の学習コスト → このドキュメントで緩和
+
+### Structure Rules
+
+```
+src/
+├── app/                        # Next.js App Router
+│   ├── (auth)/                # Route groups
+│   │   └── login/
+│   │       └── page.tsx       # Server Component
+│   ├── api/
+│   │   └── v1/
+│   │       └── [resource]/
+│   │           └── route.ts   # API handlers
+│   └── layout.tsx
+│
+├── features/                   # Feature modules
+│   └── [feature-name]/
+│       ├── api/               # Business logic for API routes
+│       ├── components/        # Feature-specific UI
+│       │   ├── List.tsx       # Server Component (default)
+│       │   └── Form.tsx       # Client Component ("use client")
+│       ├── hooks/             # React hooks (client-side)
+│       ├── types/             # TypeScript definitions
+│       ├── actions/           # Server Actions (Next.js 14)
+│       └── __tests__/         # Tests
+│
+├── lib/                       # Shared code
+│   ├── components/            # Shared UI components
+│   ├── utils/                 # Utility functions
+│   └── db/                    # Database client
+│
+└── config/                    # Configuration files
+```
+
+## Component Strategy
+
+### Server vs Client Components
+
+**Default: Server Component**
+```tsx
+// No "use client" directive needed
+// Automatically Server Component in Next.js 13+
+export default async function ProductList() {
+  const products = await prisma.product.findMany()
+
+  return (
+    <ul>
+      {products.map(product => (
+        <li key={product.id}>{product.name}</li>
+      ))}
+    </ul>
+  )
+}
+```
+
+**Use Client Component when:**
+- useState, useEffect, or other hooks needed
+- Event handlers (onClick, onChange, etc.)
+- Browser APIs (window, localStorage, etc.)
+- Third-party libraries requiring browser environment
+
+```tsx
+"use client"
+
+import { useState } from 'react'
+
+export function SearchBar() {
+  const [query, setQuery] = useState('')
+
+  return (
+    <input
+      value={query}
+      onChange={e => setQuery(e.target.value)}
+      placeholder="Search..."
+    />
+  )
+}
+```
+
+## API Layer Design
+
+### Endpoint Structure
+
+```
+/api/v1/[resource]/
+├── GET     - List/Read
+├── POST    - Create
+├── PUT     - Update
+└── DELETE  - Delete
+```
+
+### Response Format (REQUIRED)
+
+All API responses MUST follow this format:
+
+**Success:**
+```typescript
+{
+  "data": {
+    "id": "123",
+    "name": "Example"
+  }
+}
+
+// Or for lists
+{
+  "data": [...],
+  "meta": {
+    "page": 1,
+    "perPage": 20,
+    "total": 100
+  }
+}
+```
+
+**Error:**
+```typescript
+{
+  "error": "Resource not found",
+  "code": "NOT_FOUND"
+}
+
+// Or for validation errors
+{
+  "error": "Validation failed",
+  "details": [
+    { "field": "email", "message": "Invalid format" }
+  ]
+}
+```
+
+### Implementation Template
+
+```typescript
+// src/features/products/api/route.ts
+import { NextRequest, NextResponse } from 'next/server'
+import { productService } from '../service'
+
+export async function GET(req: NextRequest) {
+  try {
+    const products = await productService.findAll()
+    return NextResponse.json({ data: products })
+  } catch (error) {
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code: 'INTERNAL_ERROR'
+      },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json()
+    const product = await productService.create(body)
+    return NextResponse.json({ data: product })
+  } catch (error) {
+    return NextResponse.json(
+      { error: error.message },
+      { status: 400 }
+    )
+  }
+}
+```
+
+## Database Layer
+
+### Schema Organization
+
+```prisma
+// prisma/schema.prisma
+
+// Feature: User Management
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  role      UserRole @default(USER)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?  // Soft delete
+
+  // Relations
+  posts     Post[]
+
+  @@index([email])
+  @@index([deletedAt])
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  MODERATOR
+}
+
+// Feature: Content
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+
+  // Relations
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([authorId])
+  @@index([published])
+}
+```
+
+### Migration Workflow
+
+```bash
+# 1. Edit schema
+vim prisma/schema.prisma
+
+# 2. Create migration
+npm run db:migration -- --name add_user_role
+
+# 3. Validate
+npm run db:validate
+
+# 4. Apply to dev database
+npm run db:push
+
+# 5. Generate Prisma Client
+npm run db:generate
+```
+
+## State Management
+
+### Server State (Recommended)
+
+Use React Server Components for server data:
+```tsx
+// No client state needed!
+async function UserProfile({ id }: Props) {
+  const user = await prisma.user.findUnique({ where: { id } })
+  return <div>{user.name}</div>
+}
+```
+
+### Client State (When Necessary)
+
+Use Zustand for complex client state:
+```typescript
+// src/lib/stores/useCartStore.ts
+import { create } from 'zustand'
+
+interface CartStore {
+  items: CartItem[]
+  addItem: (item: CartItem) => void
+  removeItem: (id: string) => void
+}
+
+export const useCartStore = create<CartStore>((set) => ({
+  items: [],
+  addItem: (item) => set((state) => ({
+    items: [...state.items, item]
+  })),
+  removeItem: (id) => set((state) => ({
+    items: state.items.filter(item => item.id !== id)
+  }))
+}))
+```
+
+## Adding New Features: Step-by-Step
+
+### Example: Adding "Comments" Feature
+
+```bash
+# 1. Scaffold directory structure
+/scaffold-feature comments
+
+# This creates:
+# src/features/comments/
+# ├── api/
+# ├── components/
+# ├── hooks/
+# ├── types/
+# └── __tests__/
+
+# 2. Define types
+# Edit: src/features/comments/types/index.ts
+
+# 3. Update database schema
+# Edit: prisma/schema.prisma
+# Add Comment model
+
+# 4. Generate migration
+npm run db:migration -- --name add_comments
+
+# 5. Implement API routes
+# Edit: src/features/comments/api/route.ts
+
+# 6. Create components
+# Server Component: CommentList.tsx
+# Client Component: CommentForm.tsx
+
+# 7. Add tests
+# Edit: src/features/comments/__tests__/
+
+# 8. Verify
+/verify-arch
+npm run test -- comments
+npm run type-check
+```
+
+## Design Decisions Log
+
+### Why Prisma over TypeORM?
+- Better TypeScript support
+- Type-safe query API
+- Migration system more reliable
+- Active development and community
+
+### Why Feature-Based Structure?
+- Scales better for large teams (reduced merge conflicts)
+- Clear ownership boundaries
+- Easier to extract microservices later
+- Aligns with domain-driven design
+
+### Why Server Components First?
+- Better performance (no client JS by default)
+- Simpler code (no useState/useEffect boilerplate)
+- SEO-friendly by default
+- Direct database access without API layer
+
+## Performance Considerations
+
+### Server Components
+- Use for data fetching
+- Cache with `revalidate` option
+- Minimize client JavaScript
+
+### Client Components
+- Use sparingly (only for interactivity)
+- Code split with dynamic imports
+- Optimize bundle size
+
+### Database Queries
+- Add indexes for frequently queried fields
+- Use `select` to fetch only needed fields
+- Implement pagination for large datasets
+
+## Security Best Practices
+
+- Validate all API inputs with Zod
+- Use Server Actions for mutations
+- Implement rate limiting on API routes
+- Never expose database credentials
+- Use environment variables for secrets

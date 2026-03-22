@@ -1,240 +1,174 @@
-# Emacs Configuration Verification
+# Verify Emacs Configuration
 
-Manually verify Emacs configuration files with comprehensive checks.
+Perform comprehensive verification of Emacs configuration files to ensure they are error-free and warning-free.
 
-## What This Does
+## Verification Workflow
 
-Runs all 5 verification checks on your Emacs configuration:
+Execute the following steps in order:
 
-1. **Syntax Check** - Validates elisp syntax via batch mode
-2. **Runtime Test** - Actually launches Emacs to catch runtime errors
-3. **Messages Buffer** - Captures all warnings from `*Messages*`
-4. **Byte Compile** - Checks for compilation warnings and errors
-5. **Package Verification** - Validates package system initialization
+### 1. Create Backup
+```bash
+cp ~/.emacs.d/init.el ~/.emacs.d/init.el.backup.$(date +%Y%m%d_%H%M%S)
+```
+
+### 2. Clean Old Byte-Compiled Files
+
+**Automatically detect and remove stale .elc files:**
+
+```bash
+# Find all .el files that are newer than their .elc counterparts
+for el in ~/.emacs.d/init.el ~/.emacs.d/elisp/*.el; do
+  elc="${el}c"
+  if [ -f "$elc" ] && [ "$el" -nt "$elc" ]; then
+    echo "Removing stale: $elc (source is newer)"
+    rm -f "$elc"
+  fi
+done
+```
+
+**Or simply remove all .elc files to be safe:**
+```bash
+rm -f ~/.emacs.d/init.elc ~/.emacs.d/elisp/*.elc
+```
+
+**CRITICAL**: Even with `load-prefer-newer t`, it's best practice to remove stale `.elc` files during development to avoid confusion.
+
+### 3. Run ALL Verification Commands
+
+Execute each command and capture BOTH stderr and stdout:
+
+#### Basic Syntax Check
+```bash
+emacs --batch -l ~/.emacs.d/init.el 2>&1
+```
+
+#### Runtime Test (3-second auto-exit)
+```bash
+emacs --eval "(run-with-timer 3 nil #'kill-emacs)" 2>&1
+```
+
+#### Byte-Compile Validation
+```bash
+emacs --batch --eval "(byte-compile-file \"~/.emacs.d/init.el\")" 2>&1
+```
+
+#### Package Verification
+```bash
+emacs --batch --eval "(progn (require 'package) (package-initialize))" 2>&1
+```
+
+#### Messages Buffer Check
+```bash
+emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (with-current-buffer \"*Messages*\" (princ (buffer-string))))" 2>&1
+```
+
+### 4. Analyze Results
+
+Parse ALL output for:
+- **Errors**: Syntax errors, runtime errors, loading errors
+- **Warnings**: Obsolete functions, deprecated variables, undefined functions
+- **Compilation warnings**: Unused variables, wrong argument counts
+- **Package issues**: Missing packages, version conflicts
+
+### 5. Report Findings
+
+Create a comprehensive report including:
+- Total count of errors and warnings
+- Categorized list of issues
+- Severity assessment (Critical/High/Medium/Low)
+- Specific file and line numbers when available
+
+### 6. Auto-Fix Issues
+
+Automatically fix common issues:
+- Missing packages → `(package-install 'package-name)`
+- Syntax errors → Correct quotes, parentheses
+- Undefined functions → Add `(require 'feature)`
+- Obsolete functions → Replace with modern equivalents
+- Deprecated variables → Update to new names
+- Wrong number of arguments → Fix function calls
+- Unbalanced parentheses → Balance properly
+
+### 7. Re-Verify After Fixes
+
+Re-run ALL verification commands after making fixes.
+
+### 8. Iterate Until Clean
+
+**CRITICAL**: Continue the fix-verify cycle until:
+- ZERO errors
+- ZERO warnings
+- Emacs starts successfully without any messages
+
+## Success Criteria
+
+✅ All 5 verification commands complete without errors
+✅ No warnings in any output
+✅ Emacs launches and exits cleanly
+✅ No messages in *Messages* buffer indicating issues
+✅ Byte-compilation succeeds without warnings
+✅ Stale .elc files removed
+
+## After Verification (Optional)
+
+If this is a **completed, stable feature** and you want performance benefits:
+```bash
+# Byte-compile the file
+emacs --batch --eval "(byte-compile-file \"~/.emacs.d/elisp/YOUR-FILE.el\")"
+```
+
+**Don't byte-compile during active development** - `load-prefer-newer t` will use the newer `.el` file, but it's cleaner to just delete `.elc` files while developing.
+
+## Failure Conditions
+
+❌ Any error messages in verification output
+❌ Any warning messages in verification output
+❌ Emacs fails to start
+❌ Byte-compilation produces warnings
+❌ Package initialization fails
+
+## Feature-Specific Verification
+
+When adding new commands, keybindings, or modes, verify they work correctly:
+
+### When Adding Interactive Commands
+1. Verify command is interactive:
+```bash
+emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (commandp 'COMMAND-NAME) \"✓ Interactive\" \"✗ Not interactive\")))" 2>&1
+```
+2. Verify autoload configured:
+```bash
+emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (autoloadp (symbol-function 'COMMAND-NAME)) \"✓ Autoload\" \"✗ No autoload\")))" 2>&1
+```
+3. **Test in helm-M-x**: Launch Emacs and check if command appears in `helm-M-x` or `M-x`
+4. **Execute the command**: Run it and verify expected behavior
+
+### When Adding Keybindings
+1. Verify binding registered:
+```bash
+emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (key-binding (kbd \"KEY-SEQUENCE\"))))" 2>&1
+```
+2. **Test the key**: Press the key combination and verify it invokes the correct command
+3. Check for conflicts: Verify the key isn't already bound to something important
+
+### When Adding New Modes
+1. Verify mode function exists:
+```bash
+emacs --batch --eval "(progn (load-file \"~/.emacs.d/init.el\") (princ (if (fboundp 'MODE-NAME) \"✓ Mode defined\" \"✗ Not defined\")))" 2>&1
+```
+2. **Test mode activation**: Enable the mode and verify it works
+3. **Test mode keybindings**: Press each key defined in the mode keymap and verify functionality
+4. **Test mode hooks**: Verify hooks execute as expected
+5. Verify mode-specific faces/variables are applied correctly
 
 ## Usage
 
-```bash
+After editing any Emacs configuration file, run:
+```
 /verify-emacs
 ```
 
-This command will:
-- Run all 5 checks on `~/.emacs.d/init.el`
-- Parse and categorize errors vs warnings
-- Report findings in readable markdown format
-- **NOT** automatically fix issues (read-only verification)
-
-## When to Use
-
-- After manually editing `init.el` or elisp files
-- Before committing Emacs configuration changes
-- To verify that your config is clean
-- When you want detailed diagnostics without auto-fix
-
-## Output Format
-
+Or invoke the emacs-verifier agent for autonomous verification:
 ```
-╔═══════════════════════════════════════╗
-║  Emacs Configuration Verification    ║
-╚═══════════════════════════════════════╝
-
-File: /Users/you/.emacs.d/init.el
-
-1. Syntax Check ..................... ✓ PASSED
-2. Runtime Test ..................... ✓ PASSED
-3. Messages Buffer Check ............ ✗ FAILED (2 warnings)
-4. Byte Compile ..................... ✓ PASSED
-5. Package Verification ............. ✓ PASSED
-
-═══════════════════════════════════════
-Summary: 0 errors, 2 warnings
-═══════════════════════════════════════
-
-Warnings:
-  - Warning: assignment to free variable 'some-var'
-  - Warning: 'flet' is an obsolete function (use 'cl-flet')
-```
-
-## Related Commands
-
-- **Automatic Fix**: Edit your Emacs files and the `post-edit-emacs-verify` hook will run automatically with auto-fix
-- **Agent**: Use the `emacs-verifier` agent for fully autonomous fixing
-
-## Implementation
-
-Run the following verification commands:
-
-```bash
-#!/usr/bin/env bash
-
-INIT_FILE="$HOME/.emacs.d/init.el"
-
-echo "╔═══════════════════════════════════════╗"
-echo "║  Emacs Configuration Verification    ║"
-echo "╚═══════════════════════════════════════╝"
-echo ""
-echo "File: $INIT_FILE"
-echo ""
-
-# Track totals
-TOTAL_ERRORS=0
-TOTAL_WARNINGS=0
-ALL_ERRORS=()
-ALL_WARNINGS=()
-
-# 1. Syntax Check
-echo -n "1. Syntax Check ..................... "
-OUTPUT=$(emacs --batch -l "$INIT_FILE" 2>&1 || true)
-ERRORS=$(echo "$OUTPUT" | grep -i "error:" | grep -v "0 errors" || true)
-WARNINGS=$(echo "$OUTPUT" | grep -i "warning:" | grep -v "0 warnings" || true)
-
-if [ -z "$ERRORS" ]; then
-  echo "✓ PASSED"
-else
-  ERROR_COUNT=$(echo "$ERRORS" | wc -l | tr -d ' ')
-  echo "✗ FAILED ($ERROR_COUNT errors)"
-  TOTAL_ERRORS=$((TOTAL_ERRORS + ERROR_COUNT))
-  while IFS= read -r line; do
-    ALL_ERRORS+=("$line")
-  done <<< "$ERRORS"
-fi
-
-if [ -n "$WARNINGS" ]; then
-  WARNING_COUNT=$(echo "$WARNINGS" | wc -l | tr -d ' ')
-  TOTAL_WARNINGS=$((TOTAL_WARNINGS + WARNING_COUNT))
-  while IFS= read -r line; do
-    ALL_WARNINGS+=("$line")
-  done <<< "$WARNINGS"
-fi
-
-# 2. Runtime Test
-echo -n "2. Runtime Test ..................... "
-OUTPUT=$(emacs --eval "(run-with-timer 3 nil #'kill-emacs)" 2>&1 || true)
-ERRORS=$(echo "$OUTPUT" | grep -i "error:" | grep -v "0 errors" || true)
-WARNINGS=$(echo "$OUTPUT" | grep -i "warning:" | grep -v "0 warnings" || true)
-
-if [ -z "$ERRORS" ]; then
-  echo "✓ PASSED"
-else
-  ERROR_COUNT=$(echo "$ERRORS" | wc -l | tr -d ' ')
-  echo "✗ FAILED ($ERROR_COUNT errors)"
-  TOTAL_ERRORS=$((TOTAL_ERRORS + ERROR_COUNT))
-  while IFS= read -r line; do
-    ALL_ERRORS+=("$line")
-  done <<< "$ERRORS"
-fi
-
-if [ -n "$WARNINGS" ]; then
-  WARNING_COUNT=$(echo "$WARNINGS" | wc -l | tr -d ' ')
-  TOTAL_WARNINGS=$((TOTAL_WARNINGS + WARNING_COUNT))
-  while IFS= read -r line; do
-    ALL_WARNINGS+=("$line")
-  done <<< "$WARNINGS"
-fi
-
-# 3. Messages Buffer Check
-echo -n "3. Messages Buffer Check ............ "
-OUTPUT=$(emacs --batch --eval "(progn (load-file \"$INIT_FILE\") (with-current-buffer \"*Messages*\" (princ (buffer-string))))" 2>&1 || true)
-ERRORS=$(echo "$OUTPUT" | grep -i "error:" | grep -v "0 errors" || true)
-WARNINGS=$(echo "$OUTPUT" | grep -i "warning:" | grep -v "0 warnings" || true)
-
-if [ -z "$ERRORS" ]; then
-  echo "✓ PASSED"
-else
-  ERROR_COUNT=$(echo "$ERRORS" | wc -l | tr -d ' ')
-  echo "✗ FAILED ($ERROR_COUNT errors)"
-  TOTAL_ERRORS=$((TOTAL_ERRORS + ERROR_COUNT))
-  while IFS= read -r line; do
-    ALL_ERRORS+=("$line")
-  done <<< "$ERRORS"
-fi
-
-if [ -n "$WARNINGS" ]; then
-  WARNING_COUNT=$(echo "$WARNINGS" | wc -l | tr -d ' ')
-  TOTAL_WARNINGS=$((TOTAL_WARNINGS + WARNING_COUNT))
-  while IFS= read -r line; do
-    ALL_WARNINGS+=("$line")
-  done <<< "$WARNINGS"
-fi
-
-# 4. Byte Compile
-echo -n "4. Byte Compile ..................... "
-OUTPUT=$(emacs --batch --eval "(byte-compile-file \"$INIT_FILE\")" 2>&1 || true)
-ERRORS=$(echo "$OUTPUT" | grep -i "error:" | grep -v "0 errors" || true)
-WARNINGS=$(echo "$OUTPUT" | grep -i "warning:" | grep -v "0 warnings" || true)
-
-if [ -z "$ERRORS" ]; then
-  echo "✓ PASSED"
-else
-  ERROR_COUNT=$(echo "$ERRORS" | wc -l | tr -d ' ')
-  echo "✗ FAILED ($ERROR_COUNT errors)"
-  TOTAL_ERRORS=$((TOTAL_ERRORS + ERROR_COUNT))
-  while IFS= read -r line; do
-    ALL_ERRORS+=("$line")
-  done <<< "$ERRORS"
-fi
-
-if [ -n "$WARNINGS" ]; then
-  WARNING_COUNT=$(echo "$WARNINGS" | wc -l | tr -d ' ')
-  TOTAL_WARNINGS=$((TOTAL_WARNINGS + WARNING_COUNT))
-  while IFS= read -r line; do
-    ALL_WARNINGS+=("$line")
-  done <<< "$WARNINGS"
-fi
-
-# 5. Package Verification
-echo -n "5. Package Verification ............. "
-OUTPUT=$(emacs --batch --eval "(progn (require 'package) (package-initialize))" 2>&1 || true)
-ERRORS=$(echo "$OUTPUT" | grep -i "error:" | grep -v "0 errors" || true)
-WARNINGS=$(echo "$OUTPUT" | grep -i "warning:" | grep -v "0 warnings" || true)
-
-if [ -z "$ERRORS" ]; then
-  echo "✓ PASSED"
-else
-  ERROR_COUNT=$(echo "$ERRORS" | wc -l | tr -d ' ')
-  echo "✗ FAILED ($ERROR_COUNT errors)"
-  TOTAL_ERRORS=$((TOTAL_ERRORS + ERROR_COUNT))
-  while IFS= read -r line; do
-    ALL_ERRORS+=("$line")
-  done <<< "$ERRORS"
-fi
-
-if [ -n "$WARNINGS" ]; then
-  WARNING_COUNT=$(echo "$WARNINGS" | wc -l | tr -d ' ')
-  TOTAL_WARNINGS=$((TOTAL_WARNINGS + WARNING_COUNT))
-  while IFS= read -r line; do
-    ALL_WARNINGS+=("$line")
-  done <<< "$WARNINGS"
-fi
-
-# Summary
-echo ""
-echo "═══════════════════════════════════════"
-if [ "$TOTAL_ERRORS" -eq 0 ] && [ "$TOTAL_WARNINGS" -eq 0 ]; then
-  echo "✅ All checks passed! Configuration is clean."
-else
-  echo "Summary: $TOTAL_ERRORS errors, $TOTAL_WARNINGS warnings"
-fi
-echo "═══════════════════════════════════════"
-
-# Show errors
-if [ "$TOTAL_ERRORS" -gt 0 ]; then
-  echo ""
-  echo "Errors:"
-  for error in "${ALL_ERRORS[@]}"; do
-    echo "  - $error"
-  done
-fi
-
-# Show warnings
-if [ "$TOTAL_WARNINGS" -gt 0 ]; then
-  echo ""
-  echo "Warnings:"
-  for warning in "${ALL_WARNINGS[@]}"; do
-    echo "  - $warning"
-  done
-fi
-
-# Clean up byte-compiled file
-rm -f "$HOME/.emacs.d/init.elc"
+/emacs-verifier
 ```

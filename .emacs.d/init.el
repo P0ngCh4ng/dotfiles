@@ -422,12 +422,25 @@
   (vterm-max-scrollback 10000)
   (vterm-buffer-name-string "vterm %s"))
 
-;; Claude Code integration
+;; Claude Code integration (official package)
 (use-package claude-code
   :after vterm
+  :bind (("C-c c" . claude-code-transient))
   :config
-  (when (fboundp 'claude-code-mode)
-    (claude-code-mode 1)))
+  ;; Optional: Set default model or other options
+  ;; (setq claude-code-default-model "sonnet")
+  )
+
+;; Claude Code project shortcuts (custom extension)
+(use-package claude-code-projects
+  :ensure nil
+  :load-path "elisp"
+  :after claude-code
+  :bind (("C-c C-p" . claude-code-select-project))
+  :commands (claude-code-select-project
+             claude-code-add-project
+             claude-code-remove-project
+             claude-code-edit-projects))
 
 (use-package magit
 

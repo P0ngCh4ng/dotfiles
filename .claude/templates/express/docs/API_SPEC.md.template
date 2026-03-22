@@ -1,0 +1,620 @@
+# {{PROJECT_NAME}} - API Specification
+
+> Version: 1.0.0
+> Last Updated: {{CREATION_DATE}}
+> Base URL: `http://localhost:3000/api/v1`
+
+## Overview
+
+This document defines the API structure, response formats, authentication mechanisms, and endpoint specifications for {{PROJECT_NAME}}.
+
+## Authentication
+
+### JWT Bearer Token
+
+All protected endpoints require a JWT token in the Authorization header:
+
+```
+Authorization: Bearer <token>
+```
+
+### Obtaining a Token
+
+**Endpoint**: `POST /auth/login`
+
+**Request**:
+```json
+{
+  "email": "user@example.com",
+  "password": "password123"
+}
+```
+
+**Response**:
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "507f1f77bcf86cd799439011",
+      "email": "user@example.com",
+      "name": "John Doe",
+      "role": "user"
+    }
+  }
+}
+```
+
+## Response Format
+
+### Standard Success Response
+
+All successful API responses follow this format:
+
+```json
+{
+  "success": true,
+  "data": {},
+  "message": "Optional success message",
+  "meta": {}
+}
+```
+
+#### Fields
+
+- `success` (boolean): Always `true` for successful responses
+- `data` (object|array): The response payload
+- `message` (string, optional): Human-readable success message
+- `meta` (object, optional): Additional metadata (pagination, etc.)
+
+### Standard Error Response
+
+All error responses follow this format:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Human-readable error message",
+    "details": []
+  }
+}
+```
+
+#### Fields
+
+- `success` (boolean): Always `false` for errors
+- `error.code` (string): Machine-readable error code
+- `error.message` (string): Human-readable error description
+- `error.details` (array, optional): Detailed error information (e.g., validation errors)
+
+## Error Codes
+
+| Code | HTTP Status | Description |
+|------|-------------|-------------|
+| `VALIDATION_ERROR` | 400 | Request validation failed |
+| `UNAUTHORIZED` | 401 | Authentication required |
+| `FORBIDDEN` | 403 | Insufficient permissions |
+| `NOT_FOUND` | 404 | Resource not found |
+| `CONFLICT` | 409 | Resource conflict (e.g., duplicate) |
+| `INTERNAL_ERROR` | 500 | Internal server error |
+| `SERVICE_UNAVAILABLE` | 503 | Service temporarily unavailable |
+
+## Pagination
+
+### Request Parameters
+
+All list endpoints support pagination via query parameters:
+
+- `page` (number, default: 1): Page number
+- `limit` (number, default: 10, max: 100): Items per page
+
+**Example**: `GET /api/v1/users?page=2&limit=20`
+
+### Response Format
+
+Paginated responses include a `meta` object:
+
+```json
+{
+  "success": true,
+  "data": [],
+  "meta": {
+    "page": 2,
+    "limit": 20,
+    "total": 100,
+    "totalPages": 5
+  }
+}
+```
+
+## Filtering and Sorting
+
+### Filtering
+
+Use query parameters for filtering:
+
+**Example**: `GET /api/v1/users?role=admin&status=active`
+
+### Sorting
+
+Use `sort` parameter with field name (prefix with `-` for descending):
+
+**Example**:
+- `GET /api/v1/users?sort=name` (ascending)
+- `GET /api/v1/users?sort=-createdAt` (descending)
+
+## Field Selection
+
+Use `fields` parameter to select specific fields (comma-separated):
+
+**Example**: `GET /api/v1/users?fields=name,email,role`
+
+## Common Headers
+
+### Request Headers
+
+| Header | Required | Description |
+|--------|----------|-------------|
+| `Content-Type` | Yes (for POST/PUT) | `application/json` |
+| `Authorization` | For protected routes | `Bearer <token>` |
+| `Accept` | No | `application/json` (default) |
+
+### Response Headers
+
+| Header | Description |
+|--------|-------------|
+| `Content-Type` | `application/json` |
+| `X-RateLimit-Limit` | Rate limit maximum |
+| `X-RateLimit-Remaining` | Rate limit remaining |
+| `X-RateLimit-Reset` | Rate limit reset time |
+
+## Rate Limiting
+
+- **Window**: 15 minutes
+- **Max Requests**: 100 requests per window per IP
+- **Response**: 429 Too Many Requests when exceeded
+
+**Error Response**:
+```json
+{
+  "success": false,
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests, please try again later"
+  }
+}
+```
+
+## API Endpoints
+
+### Authentication
+
+#### Register User
+
+**Endpoint**: `POST /api/v1/auth/register`
+
+**Request**:
+```json
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "SecureP@ss123",
+  "age": 25
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "role": "user",
+      "createdAt": "2024-01-15T10:30:00.000Z"
+    }
+  },
+  "message": "User registered successfully"
+}
+```
+
+**Validation Rules**:
+- `name`: Required, 2-50 characters
+- `email`: Required, valid email format
+- `password`: Required, min 8 characters, must contain uppercase, lowercase, number
+- `age`: Optional, must be >= 18
+
+**Error Responses**:
+- `400 VALIDATION_ERROR`: Invalid input
+- `409 CONFLICT`: Email already exists
+
+#### Login
+
+**Endpoint**: `POST /api/v1/auth/login`
+
+**Request**:
+```json
+{
+  "email": "john@example.com",
+  "password": "SecureP@ss123"
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "user": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "role": "user"
+    }
+  }
+}
+```
+
+**Error Responses**:
+- `401 UNAUTHORIZED`: Invalid credentials
+
+### Users
+
+#### Get All Users
+
+**Endpoint**: `GET /api/v1/users`
+
+**Auth Required**: Yes (Admin only)
+
+**Query Parameters**:
+- `page` (number, default: 1)
+- `limit` (number, default: 10)
+- `role` (string, optional): Filter by role
+- `search` (string, optional): Search by name or email
+- `sort` (string, default: -createdAt)
+
+**Example**: `GET /api/v1/users?page=1&limit=10&role=admin&sort=-createdAt`
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com",
+      "role": "user",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "updatedAt": "2024-01-15T10:30:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 50,
+    "totalPages": 5
+  }
+}
+```
+
+#### Get User by ID
+
+**Endpoint**: `GET /api/v1/users/:id`
+
+**Auth Required**: Yes
+
+**Path Parameters**:
+- `id` (string): User ID
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "507f1f77bcf86cd799439011",
+    "name": "John Doe",
+    "email": "john@example.com",
+    "role": "user",
+    "age": 25,
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "updatedAt": "2024-01-15T10:30:00.000Z"
+  }
+}
+```
+
+**Error Responses**:
+- `404 NOT_FOUND`: User not found
+
+#### Update User
+
+**Endpoint**: `PUT /api/v1/users/:id`
+
+**Auth Required**: Yes (Own profile or Admin)
+
+**Path Parameters**:
+- `id` (string): User ID
+
+**Request**:
+```json
+{
+  "name": "John Updated",
+  "age": 26
+}
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "507f1f77bcf86cd799439011",
+    "name": "John Updated",
+    "email": "john@example.com",
+    "role": "user",
+    "age": 26,
+    "updatedAt": "2024-01-16T14:20:00.000Z"
+  },
+  "message": "User updated successfully"
+}
+```
+
+**Validation Rules**:
+- `name`: Optional, 2-50 characters if provided
+- `age`: Optional, must be >= 18 if provided
+- `email`: Cannot be updated via this endpoint
+
+**Error Responses**:
+- `403 FORBIDDEN`: Cannot update other user's profile
+- `404 NOT_FOUND`: User not found
+
+#### Delete User
+
+**Endpoint**: `DELETE /api/v1/users/:id`
+
+**Auth Required**: Yes (Admin only)
+
+**Path Parameters**:
+- `id` (string): User ID
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "message": "User deleted successfully"
+}
+```
+
+**Error Responses**:
+- `403 FORBIDDEN`: Insufficient permissions
+- `404 NOT_FOUND`: User not found
+
+### Posts (Example Resource)
+
+#### Create Post
+
+**Endpoint**: `POST /api/v1/posts`
+
+**Auth Required**: Yes
+
+**Request**:
+```json
+{
+  "title": "My First Post",
+  "content": "This is the content of my first post.",
+  "tags": ["tech", "javascript"],
+  "published": true
+}
+```
+
+**Response**: `201 Created`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "507f1f77bcf86cd799439012",
+    "title": "My First Post",
+    "content": "This is the content of my first post.",
+    "tags": ["tech", "javascript"],
+    "published": true,
+    "author": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "John Doe"
+    },
+    "createdAt": "2024-01-15T12:00:00.000Z",
+    "updatedAt": "2024-01-15T12:00:00.000Z"
+  },
+  "message": "Post created successfully"
+}
+```
+
+**Validation Rules**:
+- `title`: Required, 3-100 characters
+- `content`: Required, min 10 characters
+- `tags`: Optional, array of strings
+- `published`: Optional, boolean (default: false)
+
+#### Get All Posts
+
+**Endpoint**: `GET /api/v1/posts`
+
+**Auth Required**: No
+
+**Query Parameters**:
+- `page` (number, default: 1)
+- `limit` (number, default: 10)
+- `author` (string, optional): Filter by author ID
+- `tag` (string, optional): Filter by tag
+- `published` (boolean, optional): Filter by published status
+- `search` (string, optional): Search in title and content
+- `sort` (string, default: -createdAt)
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "id": "507f1f77bcf86cd799439012",
+      "title": "My First Post",
+      "content": "This is the content...",
+      "tags": ["tech", "javascript"],
+      "published": true,
+      "author": {
+        "id": "507f1f77bcf86cd799439011",
+        "name": "John Doe"
+      },
+      "createdAt": "2024-01-15T12:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "total": 25,
+    "totalPages": 3
+  }
+}
+```
+
+#### Get Post by ID
+
+**Endpoint**: `GET /api/v1/posts/:id`
+
+**Auth Required**: No (for published posts)
+
+**Path Parameters**:
+- `id` (string): Post ID
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "507f1f77bcf86cd799439012",
+    "title": "My First Post",
+    "content": "This is the content of my first post.",
+    "tags": ["tech", "javascript"],
+    "published": true,
+    "author": {
+      "id": "507f1f77bcf86cd799439011",
+      "name": "John Doe",
+      "email": "john@example.com"
+    },
+    "createdAt": "2024-01-15T12:00:00.000Z",
+    "updatedAt": "2024-01-15T12:00:00.000Z"
+  }
+}
+```
+
+## Validation Error Format
+
+When validation fails, the response includes detailed error information:
+
+```json
+{
+  "success": false,
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Validation failed",
+    "details": [
+      {
+        "field": "email",
+        "message": "Invalid email format",
+        "value": "invalid-email"
+      },
+      {
+        "field": "password",
+        "message": "Password must be at least 8 characters",
+        "value": "short"
+      }
+    ]
+  }
+}
+```
+
+## File Upload
+
+### Upload Single File
+
+**Endpoint**: `POST /api/v1/upload`
+
+**Auth Required**: Yes
+
+**Content-Type**: `multipart/form-data`
+
+**Request**:
+```
+file: <binary data>
+```
+
+**Response**: `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "url": "https://cdn.example.com/uploads/abc123.jpg",
+    "filename": "abc123.jpg",
+    "size": 245678,
+    "mimetype": "image/jpeg"
+  }
+}
+```
+
+**Limits**:
+- Max file size: 5MB
+- Allowed types: image/jpeg, image/png, image/gif
+
+## Webhooks (if applicable)
+
+### Webhook Format
+
+All webhooks send POST requests with this format:
+
+```json
+{
+  "event": "user.created",
+  "timestamp": "2024-01-15T12:00:00.000Z",
+  "data": {
+    "id": "507f1f77bcf86cd799439011",
+    "email": "user@example.com"
+  }
+}
+```
+
+**Headers**:
+- `X-Webhook-Signature`: HMAC-SHA256 signature for verification
+
+## Testing
+
+### Test User Credentials
+
+For development/testing:
+```
+Email: test@example.com
+Password: Test123!
+```
+
+### Postman Collection
+
+Import the Postman collection from `/docs/postman_collection.json`
+
+## Changelog
+
+### Version 1.0.0 ({{CREATION_DATE}})
+- Initial API release
+- User authentication and management
+- Post CRUD operations
+- Pagination and filtering support
+
+---
+
+**API Documentation Generated for {{PROJECT_NAME}}**
+
+For questions or support, contact: your-email@example.com
