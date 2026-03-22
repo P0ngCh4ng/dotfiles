@@ -9,8 +9,10 @@
 
 ;;; Code:
 
-(require 'claude-code-core)
 (require 'cl-lib)
+
+;; Forward declarations from claude-code-core
+(declare-function claude-code-run "claude-code-core" ())
 
 (defgroup claude-code-projects nil
   "Project shortcuts for Claude Code."
