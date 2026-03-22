@@ -468,8 +468,11 @@
              claude-code-kill-all-sessions
              claude-code-toggle-cage)
   :config
-  ;; Enable cage integration by default
-  (setq claude-code-projects-use-cage t)
+  ;; Disable cage integration when using from Emacs
+  ;; Reason: Emacs sessions are often already running inside cage (IN_CAGE=1),
+  ;; and nested cage invocations cause working directory to be reset to parent's cwd.
+  ;; Use cage only from iTerm2 (via .zshrc aliases).
+  (setq claude-code-projects-use-cage nil)
   (setq claude-code-projects-cage-config "~/.config/cage/presets.yaml"))
 
 (use-package magit
