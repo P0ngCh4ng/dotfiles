@@ -16,7 +16,7 @@
 ;; Usage:
 ;;   M-x claude-code-help-flow
 ;;   or
-;;   C-c C-h f (if key binding is configured)
+;;   C-c C-? f (if key binding is configured)
 
 ;;; Code:
 
@@ -132,17 +132,13 @@
   (let* ((title (plist-get (cdr workflow-data) :title))
          (description (plist-get (cdr workflow-data) :description))
          (steps (plist-get (cdr workflow-data) :steps))
-         (workflow-id (car workflow-data))
-         (section-start (point)))
+         (workflow-id (car workflow-data)))
 
-    ;; Section marker for navigation
-    (put-text-property section-start (1+ section-start) 'section-start t)
-    (put-text-property section-start (1+ section-start) 'workflow-id workflow-id)
-
-    ;; Title
+    ;; Title with section marker
     (insert (propertize (format "* %s\n" title)
                         'face 'claude-code-help-title-face
-                        'workflow-id workflow-id))
+                        'workflow-id workflow-id
+                        'section-start t))
 
     ;; Description
     (when description

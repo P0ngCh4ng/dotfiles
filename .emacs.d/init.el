@@ -426,7 +426,8 @@
 (use-package claude-code
   :after vterm
   :config
-  (claude-code-mode 1))
+  (when (fboundp 'claude-code-mode)
+    (claude-code-mode 1)))
 
 (use-package magit
 
@@ -750,12 +751,17 @@ Advances TODOs with names and seconds in TODO-NAMES-SECONDS."
             (message "Startup time: %.2fs" (float-time (time-subtract after-init-time before-init-time)))
             (message "===================================")))
 
+;; Prefer newer source files over stale byte-compiled files
+;; This prevents bugs during development while still benefiting from .elc performance
+(setq load-prefer-newer t)
+
 ;; Claude Code workflow help system
 (use-package claude-code-help
   :ensure nil  ;; Local package
+  :load-path "elisp"
   :commands (claude-code-help-flow claude-code-help-quick-reference)
-  :bind (("C-c C-h f" . claude-code-help-flow)
-         ("C-c C-h q" . claude-code-help-quick-reference)))
+  :bind (("C-c C-? f" . claude-code-help-flow)
+         ("C-c C-? q" . claude-code-help-quick-reference)))
 
 (provide 'init)
 ;;; init.el ends here
