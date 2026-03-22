@@ -90,13 +90,16 @@ Each entry is (PROJECT-NAME . BUFFER-NAME).")
 ;;; Cage Integration
 
 (defun claude-code-projects--get-command ()
-  "Get the Claude Code launch command (with or without cage)."
-  (if claude-code-projects-use-cage
-      (format "env CLAUDE_CODE_DISABLE_ITERM2=1 cage -config \"%s\" claude --dangerously-skip-permissions"
-              (expand-file-name claude-code-projects-cage-config))
-    (if (boundp 'claude-code-executable)
-        claude-code-executable
-      "claude")))
+  "Get the Claude Code launch command (with or without cage).
+Automatically disables cage if already running inside cage (IN_CAGE=1)
+to prevent nested cage issues."
+  (let ((already-in-cage (getenv "IN_CAGE")))
+    (if (and claude-code-projects-use-cage (not already-in-cage))
+        (format "env CLAUDE_CODE_DISABLE_ITERM2=1 cage -config \"%s\" claude --dangerously-skip-permissions"
+                (expand-file-name claude-code-projects-cage-config))
+      (if (boundp 'claude-code-executable)
+          (format "env CLAUDE_CODE_DISABLE_ITERM2=1 %s --dangerously-skip-permissions" claude-code-executable)
+        "env CLAUDE_CODE_DISABLE_ITERM2=1 claude --dangerously-skip-permissions"))))
 
 ;;;###autoload
 (defun claude-code-select-project ()

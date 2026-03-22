@@ -52,10 +52,12 @@ C-c C-l            # List all active sessions
 ```
 
 **Cage Integration**:
-- **Status**: Disabled by default in Emacs (enabled only for iTerm2 via .zshrc aliases)
-- **Reason**: Emacs sessions are often already running inside cage (IN_CAGE=1). Nested cage invocations cause working directory issues and EPERM errors when writing to `.claude/projects/`
-- **Usage**: Use cage only from iTerm2 terminal (aliases: `claude`, `claude-raw`)
-- Toggle cage: `M-x claude-code-toggle-cage` (for testing only)
+- **Status**: Enabled by default, with automatic nested cage detection
+- **How it works**: Checks `IN_CAGE` environment variable before launching
+  - If not in cage → Uses cage for sandboxed execution
+  - If already in cage → Skips cage to prevent nesting issues
+- **Benefits**: Secure by default, works from both Emacs and iTerm2
+- Toggle cage: `M-x claude-code-toggle-cage`
 - Configure path: Customize `claude-code-projects-cage-config`
 
 **Main Workflow (Transient Menu - `C-c c`)**:
