@@ -145,6 +145,17 @@
 (use-package dash)
 (use-package compat)  ;; Emacs 30 compatibility
 
+;; 重要な依存パッケージを先にインストール
+;; vterm: claude-codeの依存パッケージ（ビルドが必要なため明示的に）
+(unless (package-installed-p 'vterm)
+  (message "Installing vterm (required for claude-code)...")
+  (package-install 'vterm))
+
+;; claude-code: 公式パッケージ
+(unless (package-installed-p 'claude-code)
+  (message "Installing claude-code...")
+  (package-install 'claude-code))
+
 
 (use-package mozc
   :ensure t
@@ -416,15 +427,18 @@
   :ensure t)
 
 ;; vterm: 高性能ターミナルエミュレータ
+;; claude-codeの依存パッケージとして必要時に自動ロード
 (use-package vterm
   :ensure t
+  :commands (vterm vterm-other-window)
   :custom
   (vterm-max-scrollback 10000)
   (vterm-buffer-name-string "vterm %s"))
 
 ;; Claude Code integration (official package)
+;; C-c c キー押下時に自動ロード
 (use-package claude-code
-  :after vterm
+  :ensure t
   :bind (("C-c c" . claude-code-transient))
   :config
   ;; Optional: Set default model or other options
@@ -432,10 +446,11 @@
   )
 
 ;; Claude Code project shortcuts (custom extension)
+;; C-c C-p キー押下時に自動ロード
+;; claude-code-projects.elの中でclaude-codeをrequireするため、:afterは不要
 (use-package claude-code-projects
   :ensure nil
   :load-path "elisp"
-  :after claude-code
   :bind (("C-c C-p" . claude-code-select-project)
          ("C-c C-w" . claude-code-switch-session)
          ("C-c C-l" . claude-code-list-sessions))

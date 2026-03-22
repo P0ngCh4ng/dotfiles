@@ -11,8 +11,13 @@
 
 (require 'cl-lib)
 
+;; claude-codeパッケージをロード（遅延ロード対応）
+;; C-c C-pが押されたときに、必要に応じてclaude-codeをロードする
+(require 'claude-code nil t)
+
 ;; Forward declarations from claude-code-core
 (declare-function claude-code-run "claude-code-core" ())
+(defvar claude-code-executable)
 
 (defgroup claude-code-projects nil
   "Project shortcuts for Claude Code."
@@ -54,7 +59,9 @@ Each entry is (PROJECT-NAME . BUFFER-NAME).")
   (if claude-code-projects-use-cage
       (format "cage -config \"%s\" claude --dangerously-skip-permissions"
               (expand-file-name claude-code-projects-cage-config))
-    claude-code-executable))
+    (if (boundp 'claude-code-executable)
+        claude-code-executable
+      "claude")))
 
 ;;;###autoload
 (defun claude-code-select-project ()
