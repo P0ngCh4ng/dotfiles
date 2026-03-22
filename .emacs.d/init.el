@@ -468,9 +468,9 @@
              claude-code-kill-all-sessions
              claude-code-toggle-cage)
   :config
-  ;; Enable cage integration by default
-  ;; NOTE: Cage is automatically disabled if already running inside cage (IN_CAGE=1)
-  ;; to prevent nested cage issues. See claude-code-projects--get-command for implementation.
+  ;; Enable cage integration with automatic nested cage detection
+  ;; Cage is automatically disabled if already running inside cage (IN_CAGE=1)
+  ;; to prevent nested cage issues and EPERM errors
   (setq claude-code-projects-use-cage t)
   (setq claude-code-projects-cage-config "~/.config/cage/presets.yaml"))
 

@@ -52,13 +52,14 @@ C-c C-l            # List all active sessions
 ```
 
 **Cage Integration**:
-- **Status**: Enabled by default, with automatic nested cage detection
-- **How it works**: Checks `IN_CAGE` environment variable before launching
-  - If not in cage → Uses cage for sandboxed execution
-  - If already in cage → Skips cage to prevent nesting issues
-- **Benefits**: Secure by default, works from both Emacs and iTerm2
-- Toggle cage: `M-x claude-code-toggle-cage`
-- Configure path: Customize `claude-code-projects-cage-config`
+- **Status**: ✅ **ENABLED** with symlink resolution fix
+- **Configuration**:
+  - `.zshrc` (line 153): Uses cage wrapper for sandboxing
+  - `.emacs.d/elisp/claude-code-projects.el` (line 74): `claude-code-projects-use-cage t`
+  - `.config/cage/presets.yaml`: Main configuration with `eval-symlinks: true` for `.claude`
+- **Important**: `.claude` is a symlink to `dotfiles/.claude` - requires `eval-symlinks: true`
+- **Toggle**: `M-x claude-code-toggle-cage` to enable/disable cage temporarily
+- **Nested cage detection**: Automatically prevents nested cage execution via `IN_CAGE` environment variable
 
 **Main Workflow (Transient Menu - `C-c c`)**:
 ```
@@ -113,6 +114,41 @@ M-x claude-code-toggle-cage       # Toggle cage on/off
 - Package: `.emacs.d/elpa/claude-code-*/`
 - Extension: `.emacs.d/elisp/claude-code-projects.el`
 - Config: `.emacs.d/init.el` (lines 425-443)
+
+#### Troubleshooting
+
+**EPERM Error: "operation not permitted" when writing to `.claude/projects/`**
+
+**Symptoms**:
+```
+Error: EPERM: operation not permitted, open '/Users/pongchang/.claude/projects/-Users-pongchang-pon/[uuid].jsonl'
+```
+
+**Root Cause (RESOLVED - 2026-03-22)**:
+`.claude` is a symlink to `dotfiles/.claude`. cage requires `eval-symlinks: true` to allow writes to the actual path.
+
+**Solution**:
+Add `eval-symlinks: true` to `.config/cage/presets.yaml`:
+
+```yaml
+presets:
+  claude-code:
+    allow:
+      - path: "/Users/pongchang/.claude"
+        eval-symlinks: true  # Required for symlinks
+```
+
+**Verification**:
+```bash
+# Test cage with symlink resolution
+cd ~/pon
+cage -config "$HOME/.config/cage/presets.yaml" -preset claude-code claude --dangerously-skip-permissions
+
+# Should work without EPERM errors
+```
+
+**Related Documentation**:
+- See `.serena/memories/troubleshooting/cage-eperm-2026-03-22.md` for investigation details
 
 ### Project Management
 This dotfiles repository manages the **central project registry** (`projects.yml`) for all local projects on this machine.
