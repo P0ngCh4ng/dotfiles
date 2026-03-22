@@ -433,7 +433,11 @@
   :commands (vterm vterm-other-window)
   :custom
   (vterm-max-scrollback 10000)
-  (vterm-buffer-name-string "vterm %s"))
+  (vterm-buffer-name-string "vterm %s")
+  :config
+  ;; claude-code-vterm-modeでも使えるように、vterm-mode-mapにcopy-modeキーバインドを追加
+  ;; C-c C-tは claude-code がtransientメニューで使用しているため、C-c C-v を使用
+  (define-key vterm-mode-map (kbd "C-c C-v") 'vterm-copy-mode))
 
 ;; Claude Code integration (official package)
 ;; C-c c キー押下時に自動ロード
@@ -443,6 +447,7 @@
   :config
   ;; Optional: Set default model or other options
   ;; (setq claude-code-default-model "sonnet")
+  ;; NOTE: iTerm2統合はclaudeode-projects.elの環境変数で無効化済み
   )
 
 ;; Claude Code project shortcuts (custom extension)
