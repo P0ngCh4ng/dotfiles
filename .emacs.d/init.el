@@ -436,11 +436,21 @@
   :ensure nil
   :load-path "elisp"
   :after claude-code
-  :bind (("C-c C-p" . claude-code-select-project))
+  :bind (("C-c C-p" . claude-code-select-project)
+         ("C-c C-w" . claude-code-switch-session)
+         ("C-c C-l" . claude-code-list-sessions))
   :commands (claude-code-select-project
              claude-code-add-project
              claude-code-remove-project
-             claude-code-edit-projects))
+             claude-code-edit-projects
+             claude-code-switch-session
+             claude-code-list-sessions
+             claude-code-kill-all-sessions
+             claude-code-toggle-cage)
+  :config
+  ;; Enable cage integration by default
+  (setq claude-code-projects-use-cage t)
+  (setq claude-code-projects-cage-config "~/.config/cage/presets.yaml"))
 
 (use-package magit
 

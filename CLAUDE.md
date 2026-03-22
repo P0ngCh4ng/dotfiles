@@ -47,7 +47,14 @@ This environment uses Claude Code **exclusively within Emacs** (not terminal).
 ```elisp
 C-c c              # Open Claude Code Transient menu (main interface)
 C-c C-p            # Quick select from predefined projects
+C-c C-w            # Switch between active sessions
+C-c C-l            # List all active sessions
 ```
+
+**Cage Integration**:
+- **Default**: Uses `cage -config ~/.config/cage/presets.yaml claude --dangerously-skip-permissions`
+- Toggle cage: `M-x claude-code-toggle-cage`
+- Configure path: Customize `claude-code-projects-cage-config`
 
 **Main Workflow (Transient Menu - `C-c c`)**:
 ```
@@ -80,6 +87,14 @@ M-x claude-code-select-project    # Select from predefined list
 M-x claude-code-add-project       # Add current directory to list
 M-x claude-code-remove-project    # Remove project from list
 M-x claude-code-edit-projects     # Customize project list
+```
+
+**Session Management Commands**:
+```elisp
+M-x claude-code-switch-session    # Switch between sessions (C-c C-w)
+M-x claude-code-list-sessions     # Show all active sessions (C-c C-l)
+M-x claude-code-kill-all-sessions # Kill all sessions
+M-x claude-code-toggle-cage       # Toggle cage on/off
 ```
 
 **Workflow Example**:
