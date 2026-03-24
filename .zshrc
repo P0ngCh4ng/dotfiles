@@ -63,7 +63,7 @@ port-scan() {
 # projects.ymlから全プロジェクトのport情報を表示
 check-ports() {
     if [[ ! -f "$PROJECTS_FILE" ]]; then
-        echo "Error: $PROJECTS_FILE not found"
+        echo "Error: $PROJECTS_FILE not found" >&2
         return 1
     fi
 
@@ -111,12 +111,14 @@ pj-info() {
     fi
 
     if [[ ! -f "$PROJECTS_FILE" ]]; then
-        echo "Error: $PROJECTS_FILE not found"
+        echo "Error: $PROJECTS_FILE not found" >&2
         return 1
     fi
 
     local project_name="$1"
     local in_project=0
+    local in_databases=0
+    local db_count=0
 
     echo "=== Project: $project_name ==="
 
@@ -128,11 +130,25 @@ pj-info() {
 
         if [[ $in_project -eq 1 ]]; then
             # 次のプロジェクトが始まったら終了
-            if [[ "$line" =~ ^[[:space:]]*[a-zA-Z0-9_-]+:$ ]]; then
+            if [[ "$line" =~ ^[[:space:]]*[a-zA-Z0-9_-]+:$ && ! "$line" =~ databases: ]]; then
                 break
             fi
 
-            # 情報を表示
+            # databases セクション開始
+            if [[ "$line" =~ ^[[:space:]]+databases: ]]; then
+                in_databases=1
+                continue
+            fi
+
+            # databases セクション内
+            if [[ $in_databases -eq 1 ]]; then
+                if [[ "$line" =~ ^[[:space:]]+-[[:space:]]+name:[[:space:]]*(.*) ]]; then
+                    ((db_count++))
+                fi
+                continue
+            fi
+
+            # 基本情報を表示
             if [[ "$line" =~ path:[[:space:]]*(.*) ]]; then
                 echo "Path: ${match[1]}"
             elif [[ "$line" =~ ports:[[:space:]]*\[(.*)\] ]]; then
@@ -144,7 +160,20 @@ pj-info() {
             fi
         fi
     done < "$PROJECTS_FILE"
+
+    # DB情報を表示
+    if [[ $db_count -gt 0 ]]; then
+        echo "Databases: $db_count configured"
+        echo ""
+        echo "Run 'db-list $project_name' for database details"
+        echo "Run 'db-info $project_name' for full database information"
+    fi
 }
+
+# ============================================
+# Database Management Functions (sourced from db.zsh)
+# ============================================
+[[ -f "$HOME/dotfiles/db.zsh" ]] && source "$HOME/dotfiles/db.zsh"
 
 alias ..='cd ..'
 alias ...='cd ../..'

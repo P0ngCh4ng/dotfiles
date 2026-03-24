@@ -8,6 +8,46 @@ projects:
     ports: [3000, 3001]  # main app, api server, etc.
     description: "Short description"
     tech: [node, react, postgresql]  # optional
+    databases:
+      - name: main                    # Database identifier
+        type: postgresql              # mysql | postgresql | sqlite | mongodb | redis
+        host: localhost               # or docker container name
+        port: 5432                    # optional (uses DB default if omitted)
+        database: example_dev         # database name
+        user: example_user            # database user
+        # Password via env var: EXAMPLE_PROJECT_DB_MAIN_PASSWORD
+        docker:
+          container: example-postgres # Docker container name
+          compose_file: docker-compose.yml  # optional, relative to project path
+        backup:
+          enabled: true               # Enable automatic backups
+          retention_days: 7           # Keep backups for N days
+          path: ~/backups/example     # optional, defaults to ~/dotfiles/etc/db/backup/{project}/{db_name}
+
+      - name: cache                   # Optional: additional database
+        type: redis
+        host: localhost
+        port: 6379
+        docker:
+          container: example-redis
+
+  # Another example with MySQL:
+  mysql-project:
+    path: ~/workspace/mysql-app
+    ports: [8080]
+    description: "MySQL-based application"
+    tech: [python, flask, mysql]
+    databases:
+      - name: main
+        type: mysql
+        host: localhost
+        port: 3306
+        database: myapp_dev
+        user: root
+        # Password via env var: MYSQL_PROJECT_DB_MAIN_PASSWORD
+        docker:
+          container: mysql-app-db
+          compose_file: docker-compose.yml
 
   # Add your projects here:
 

@@ -13,46 +13,11 @@
 (require 'cl-lib)
 
 ;; claude-codeパッケージをロード（遅延ロード対応）
-;; C-c C-pが押されたときに、必要に応じてclaude-codeをロードする
 (require 'claude-code nil t)
 
-;; Forward declarations from claude-code-core
-(declare-function claude-code-run "claude-code-core" ())
-(defvar claude-code-executable)
-
-;;; Fix for non-projectile directories
-;; claude-code-coreはprojectile-project-rootに依存しているが、
-;; .gitなどのマーカーがないディレクトリではnilを返すため、
-;; default-directoryをフォールバックとして使用するようアドバイスする
-
-(defun claude-code-projects--safe-project-root ()
-  "Get project root with fallback to default-directory.
-Handles cases where projectile-project-root returns nil."
-  (or (and (fboundp 'projectile-project-root)
-           (projectile-project-root))
-      default-directory))
-
-(with-eval-after-load 'claude-code-core
-  (defun claude-code-projects--buffer-name-advice (orig-fun)
-    "Advice for claude-code-buffer-name to handle non-projectile directories."
-    (let* ((project-root (claude-code-projects--safe-project-root))
-           (normalized-root (when project-root
-                             (directory-file-name (expand-file-name project-root)))))
-      (when normalized-root
-        (format "*claude:%s*" normalized-root))))
-
-  (advice-add 'claude-code-buffer-name :around
-              (lambda (orig-fun &rest args)
-                (or (apply orig-fun args)
-                    (claude-code-projects--buffer-name-advice orig-fun))))
-
-  (defun claude-code-projects--run-advice (orig-fun &rest args)
-    "Advice for claude-code-run to handle non-projectile directories."
-    (let* ((project-root (claude-code-projects--safe-project-root))
-           (default-directory (expand-file-name project-root)))
-      (apply orig-fun args)))
-
-  (advice-add 'claude-code-run :around #'claude-code-projects--run-advice))
+;; Forward declarations
+(declare-function claude-code-vterm-mode "claude-code-ui" ())
+(defvar vterm-shell)
 
 (defgroup claude-code-projects nil
   "Project shortcuts for Claude Code."
@@ -72,8 +37,7 @@ Each entry is a cons cell (PROJECT-NAME . DIRECTORY)."
   :group 'claude-code-projects)
 
 (defcustom claude-code-projects-use-cage t
-  "Whether to use cage for launching Claude Code.
-When non-nil, uses cage with presets configuration."
+  "Whether to use cage for launching Claude Code."
   :type 'boolean
   :group 'claude-code-projects)
 
@@ -84,22 +48,14 @@ When non-nil, uses cage with presets configuration."
   :group 'claude-code-projects)
 
 (defvar claude-code-projects-sessions nil
-  "List of active Claude Code sessions.
-Each entry is (PROJECT-NAME . BUFFER-NAME).")
-
-;;; Cage Integration
+  "List of active Claude Code sessions.")
 
 (defun claude-code-projects--get-command ()
-  "Get the Claude Code launch command (with or without cage).
-Automatically disables cage if already running inside cage (IN_CAGE=1)
-to prevent nested cage issues."
+  "Get the Claude Code launch command."
   (if claude-code-projects-use-cage
-      ;; Use shell conditional to check IN_CAGE at runtime (more reliable than getenv)
-      (format "if [ -z \"$IN_CAGE\" ]; then env CLAUDE_CODE_DISABLE_ITERM2=1 cage -config \"%s\" claude --dangerously-skip-permissions; else env CLAUDE_CODE_DISABLE_ITERM2=1 claude --dangerously-skip-permissions; fi"
-              (expand-file-name claude-code-projects-cage-config))
-    (if (boundp 'claude-code-executable)
-        (format "env CLAUDE_CODE_DISABLE_ITERM2=1 %s --dangerously-skip-permissions" claude-code-executable)
-      "env CLAUDE_CODE_DISABLE_ITERM2=1 claude --dangerously-skip-permissions")))
+      (format "cage -config %s -preset claude-code -- bash -c 'env CLAUDE_CODE_DISABLE_ITERM2=1 claude --dangerously-skip-permissions'"
+              (shell-quote-argument (expand-file-name claude-code-projects-cage-config)))
+    "env CLAUDE_CODE_DISABLE_ITERM2=1 claude --dangerously-skip-permissions"))
 
 ;;;###autoload
 (defun claude-code-select-project ()
@@ -107,27 +63,51 @@ to prevent nested cage issues."
   (interactive)
   (let* ((project (completing-read "Select project: " claude-code-projects-list nil t))
          (dir (cdr (assoc project claude-code-projects-list))))
-    (if dir
-        (let ((default-directory (expand-file-name dir))
-              (claude-code-executable (claude-code-projects--get-command))
-              (project-dir (expand-file-name dir)))
-          (claude-code-run)
-          ;; Track session
-          (let ((buffer-name (buffer-name)))
-            (add-to-list 'claude-code-projects-sessions
-                         (cons project buffer-name)))
-          ;; cage使用時はworking directoryが正しく設定されないため、
-          ;; vterm起動後に明示的にcdコマンドを送信
-          (when claude-code-projects-use-cage
-            (run-with-timer 1.5 nil
-                           (lambda (dir buf-name)
-                             (when-let ((buf (get-buffer buf-name)))
-                               (with-current-buffer buf
-                                 (require 'vterm)
-                                 (vterm-send-string (format "cd \"%s\"" dir))
-                                 (vterm-send-return))))
-                           project-dir buffer-name)))
-      (user-error "Project not found: %s" project))))
+    (cond
+     ((not dir)
+      (user-error "Project directory not configured for: %s" project))
+     ((string-empty-p dir)
+      (user-error "Project directory is empty for: %s" project))
+     (t
+      (let* ((expanded-dir (expand-file-name dir))
+             (project-dir expanded-dir)
+             (normalized-root (directory-file-name expanded-dir))
+             (buffer-name (format "*claude:%s*" normalized-root))
+             (existing-buffer (get-buffer buffer-name)))
+        (unless (file-directory-p expanded-dir)
+          (user-error "Directory does not exist: %s" expanded-dir))
+        ;; If buffer exists, just switch to it
+        (if (and existing-buffer (buffer-live-p existing-buffer))
+            (progn
+              (switch-to-buffer-other-window buffer-name)
+              (message "Switched to existing session: %s" project))
+          ;; Create new session
+          (let ((command (claude-code-projects--get-command))
+                (original-vterm-shell (and (boundp 'vterm-shell) vterm-shell))
+                (original-default-directory default-directory))
+            (setq default-directory expanded-dir)
+            (setq vterm-shell command)
+            (unwind-protect
+                (progn
+                  (let ((buf (get-buffer-create buffer-name)))
+                    (with-current-buffer buf
+                      (require 'claude-code-ui)
+                      (claude-code-vterm-mode))
+                    (switch-to-buffer-other-window buffer-name)
+                    (add-to-list 'claude-code-projects-sessions
+                                 (cons project buffer-name))
+                    (when claude-code-projects-use-cage
+                      (run-with-timer 1.5 nil
+                                     (lambda (dir buf-name)
+                                       (when-let ((buf (get-buffer buf-name)))
+                                         (with-current-buffer buf
+                                           (require 'vterm)
+                                           (vterm-send-string (format "cd \"%s\"" dir))
+                                           (vterm-send-return))))
+                                     project-dir buffer-name))
+                    (message "Started Claude Code session: %s" project)))
+              (setq vterm-shell original-vterm-shell)
+              (setq default-directory original-default-directory)))))))))
 
 ;;;###autoload
 (defun claude-code-add-project ()
@@ -155,8 +135,6 @@ to prevent nested cage issues."
   "Open customization buffer for project list."
   (interactive)
   (customize-variable 'claude-code-projects-list))
-
-;;; Session Management
 
 ;;;###autoload
 (defun claude-code-list-sessions ()

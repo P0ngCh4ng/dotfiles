@@ -10,6 +10,7 @@ This is a personal dotfiles repository that manages configuration files and deve
 
 - **Makefile**: Primary interface for dotfiles management with targets for installation, deployment, and cleanup
 - **.zshrc**: Main shell configuration with aliases, functions, and integrations
+- **db.zsh**: Database management functions (sourced by .zshrc)
 - **.emacs.d/**: Complete Emacs configuration directory with custom elisp packages
 - **etc/init/**: Platform-specific setup scripts for macOS and Linux
 - **Brewfile**: Homebrew package definitions for macOS dependencies
@@ -156,12 +157,69 @@ This dotfiles repository manages the **central project registry** (`projects.yml
 **Responsibility**:
 - Maintain `projects.yml` schema and shell functions
 - Provide template (`projects.yml.example`)
-- Keep port management functions in `.zshrc` up-to-date
+- Keep port management and database management functions in `.zshrc` up-to-date
 
 **Available Functions** (loaded via `.zshrc`):
 - `port-scan` - Display currently used ports system-wide
-- `pj-info [name]` - Show project details from projects.yml
+- `pj-info [name]` - Show project details from projects.yml (includes database count)
 - `check-ports` - Check all projects' port assignments and availability
+
+**Database Management Functions**:
+
+*Core Operations*:
+- `db-list [project]` - List all databases for a project with connection status
+- `db-info [project] [db-name]` - Show detailed database information
+- `db-connect [project] [db-name]` - Connect to a database (MySQL/PostgreSQL)
+
+*Backup & Restore*:
+- `db-backup [project] [db-name]` - Create timestamped backup (gzip compressed)
+- `db-restore [project] [db-name] [backup-file]` - Restore from backup (with confirmation)
+  - Automatic cleanup of old backups based on retention policy
+
+*Docker Management*:
+- `db-status [project]` - Show all database container statuses
+- `db-start [project] [db-name]` - Start database containers (supports docker-compose)
+- `db-stop [project] [db-name]` - Stop database containers
+
+*Security & Testing*:
+- `db-set-password [project] [db-name]` - Set password securely (hidden input)
+- `db-test-connection [project] [db-name]` - Test database connectivity
+
+**Database Configuration** (in `projects.yml`):
+```yaml
+databases:
+  - name: main                    # Database identifier
+    type: postgresql              # mysql | postgresql | sqlite | mongodb | redis
+    host: localhost               # or docker container name
+    port: 5432                    # optional (uses DB default if omitted)
+    database: example_dev         # database name
+    user: example_user            # database user
+    # Password via env var: PROJECT_DB_MAIN_PASSWORD
+    docker:
+      container: example-postgres # Docker container name
+      compose_file: docker-compose.yml  # optional
+    backup:
+      enabled: true               # Enable automatic backups
+      retention_days: 7           # Keep backups for N days
+      path: ~/backups/example     # optional backup path
+```
+
+**Password Management**:
+- Convention: `${PROJECT}_DB_${DB_NAME}_PASSWORD` (uppercase)
+- Example: `EXAMPLE_PROJECT_DB_MAIN_PASSWORD=secret123`
+- Set in `~/.zshenv` or `~/.zprofile` for persistence
+
+**Supported Database Types**:
+- MySQL (port 3306) - via `mysql` client
+- PostgreSQL (port 5432) - via `psql` client
+- Redis (port 6379) - future support
+- MongoDB (port 27017) - future support
+- SQLite - future support
+
+**Docker Integration**:
+- Automatically detects running containers
+- Shows container status in `db-list` and `db-info` (✅/❌)
+- Uses `docker exec` for connections when container is running
 
 **File Management**:
 - `projects.yml` - User's actual project list (gitignored, local only)
@@ -170,9 +228,21 @@ This dotfiles repository manages the **central project registry** (`projects.yml
 
 **When working in dotfiles**:
 - Changes to project management functions require testing with actual `projects.yml`
-- Updates to shell functions must be reflected in `.zshrc`
+- Port management functions are in `.zshrc`
+- **Database management functions are in `db.zsh`** (sourced by .zshrc)
 - Template (`projects.yml.example`) should be kept simple and well-documented
-- Global rules are defined in `~/.claude/rules/project-management.md`
+- **Global rules**:
+  - `~/.claude/rules/project-management.md` - Project management guidelines
+  - `~/.claude/rules/database-management.md` - Database operations and workflows
+- **Implementation documentation**: `~/.claude/skills/db-management/SKILL.md`
+
+**Key Features**:
+- ✅ All passwords via environment variables (secure, not in shell history)
+- ✅ Automatic Docker detection and container management
+- ✅ Backup rotation with configurable retention
+- ✅ Interactive restore with confirmation prompts
+- ✅ docker-compose integration for container lifecycle
+- ✅ Connection testing with troubleshooting tips
 
 ## Configuration Details
 
