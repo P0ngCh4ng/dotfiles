@@ -1,0 +1,112 @@
+# Example projects.yml configuration for Database Management
+# Copy relevant sections to your ~/dotfiles/projects.yml
+
+projects:
+  # Full-featured example with PostgreSQL
+  myapp:
+    path: ~/projects/myapp
+    ports: [3000, 3001, 5432]
+    description: "Full-stack web application"
+    tech: [node, react, postgresql]
+    databases:
+      - name: main
+        type: postgresql
+        host: localhost
+        port: 5432
+        database: myapp_dev
+        user: postgres
+        # Password env var: MYAPP_DB_MAIN_PASSWORD
+        docker:
+          container: myapp-postgres
+          compose_file: docker-compose.yml
+        backup:
+          enabled: true
+          retention_days: 7
+          path: ~/backups/myapp
+
+      - name: cache
+        type: redis
+        host: localhost
+        port: 6379
+        docker:
+          container: myapp-redis
+
+  # MySQL example with minimal config
+  legacy-api:
+    path: ~/projects/legacy-api
+    ports: [8080]
+    description: "Legacy API server"
+    tech: [python, flask, mysql]
+    databases:
+      - name: main
+        type: mysql
+        host: localhost
+        port: 3306
+        database: legacy_db
+        user: root
+        # Password env var: LEGACY_API_DB_MAIN_PASSWORD
+        docker:
+          container: legacy-mysql
+        backup:
+          enabled: true
+          retention_days: 14
+
+  # Multi-database project
+  ecommerce:
+    path: ~/projects/ecommerce
+    ports: [4000, 4001]
+    description: "E-commerce platform"
+    tech: [node, vue, postgresql, redis]
+    databases:
+      - name: products
+        type: postgresql
+        host: localhost
+        port: 5433
+        database: products_db
+        user: ecom_user
+        # Password env var: ECOMMERCE_DB_PRODUCTS_PASSWORD
+        docker:
+          container: ecom-products-db
+          compose_file: infrastructure/docker-compose.yml
+        backup:
+          enabled: true
+          retention_days: 30
+          path: ~/backups/ecommerce/products
+
+      - name: sessions
+        type: redis
+        host: localhost
+        port: 6380
+        docker:
+          container: ecom-sessions-redis
+
+      - name: analytics
+        type: postgresql
+        host: localhost
+        port: 5434
+        database: analytics_db
+        user: analytics_user
+        # Password env var: ECOMMERCE_DB_ANALYTICS_PASSWORD
+        docker:
+          container: ecom-analytics-db
+        backup:
+          enabled: true
+          retention_days: 90
+
+  # Host-only connection (no Docker)
+  remote-project:
+    path: ~/projects/remote-app
+    ports: [5000]
+    description: "App connecting to remote database"
+    tech: [ruby, rails, postgresql]
+    databases:
+      - name: main
+        type: postgresql
+        host: db.example.com
+        port: 5432
+        database: remote_production
+        user: app_user
+        # Password env var: REMOTE_PROJECT_DB_MAIN_PASSWORD
+        # No docker section - uses host connection only
+        backup:
+          enabled: false  # Remote DB managed separately

@@ -19,13 +19,13 @@ telemetry/
 todos/
 local/
 
-# Plugin runtime data
-plugins/*/node_modules/
-plugins/*/.cache/
+# Plugin runtime data (exclude all plugins for privacy)
+plugins/
 
 # Task and project runtime data
 tasks/
 projects/
+plans/
 
 # MCP temporary files
 .playwright-mcp/
