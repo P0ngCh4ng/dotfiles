@@ -1,9 +1,4 @@
 {
-  "enabledPlugins": {
-    "typescript-lsp@claude-plugins-official": true
-  },
-  "alwaysThinkingEnabled": true,
-  "enableAllProjectMcpServers": true,
   "permissions": {
     "deny": [
       "Read(**/.env*)",
@@ -21,5 +16,10 @@
       "Read(**/.netrc)",
       "Read(**/.gitconfig)"
     ]
-  }
+  },
+  "enableAllProjectMcpServers": true,
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true
+  },
+  "alwaysThinkingEnabled": true
 }
