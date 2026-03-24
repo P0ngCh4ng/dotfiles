@@ -75,27 +75,39 @@ check-ports() {
 
     # projects.ymlをパース（シンプル実装）
     local current_project=""
+    local in_projects=0
     while IFS= read -r line; do
-        # プロジェクト名を取得
-        if [[ "$line" =~ ^[[:space:]]*([a-zA-Z0-9_-]+):$ ]]; then
-            current_project="${match[1]}"
-            if [[ "$current_project" != "projects" ]]; then
-                echo "📦 $current_project"
-            fi
+        # Skip comments
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+        # projects: セクション開始
+        if [[ "$line" =~ ^projects:$ ]]; then
+            in_projects=1
+            continue
         fi
 
-        # portsを取得
-        if [[ "$line" =~ ports:[[:space:]]*\[([0-9, ]+)\] ]]; then
-            local ports="${match[1]}"
-            # ポートごとにチェック
-            for port in ${(s:,:)ports}; do
-                port=$(echo $port | tr -d ' ')
-                if echo "$used_ports" | grep -q "^${port}$"; then
-                    echo "  🔴 Port $port (IN USE)"
-                else
-                    echo "  🟢 Port $port (available)"
-                fi
-            done
+        if [[ $in_projects -eq 1 ]]; then
+            # プロジェクト名を取得（インデント2スペースのみ）
+            if [[ "$line" =~ ^\ \ ([a-zA-Z0-9_-]+):$ ]]; then
+                current_project="${match[1]}"
+                echo "📦 $current_project"
+            fi
+
+            # portsを取得
+            if [[ "$line" =~ "ports: \[([0-9, ]+)\]" ]]; then
+                local ports="${match[1]}"
+                # ポートごとにチェック
+                for port in ${(s:,:)ports}; do
+                    port=$(echo $port | tr -d ' ')
+                    if echo "$used_ports" | grep -q "^${port}$"; then
+                        echo "  🔴 Port $port (IN USE)"
+                    else
+                        echo "  🟢 Port $port (available)"
+                    fi
+                done
+            elif [[ "$line" == *"ports: []"* ]]; then
+                echo "  (No ports assigned)"
+            fi
         fi
     done < "$PROJECTS_FILE"
 }
