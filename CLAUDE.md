@@ -55,10 +55,13 @@ C-c C-l            # List all active sessions
 **Cage Integration**:
 - **Status**: ✅ **ENABLED** with symlink resolution fix
 - **Configuration**:
-  - `.zshrc` (line 153): Uses cage wrapper for sandboxing
-  - `.emacs.d/elisp/claude-code-projects.el` (line 74): `claude-code-projects-use-cage t`
+  - `.zshrc` (line 194): Uses cage wrapper for sandboxing
+  - `.emacs.d/elisp/claude-code-projects.el` (line 39): `claude-code-projects-use-cage t`
   - `.config/cage/presets.yaml`: Main configuration with `eval-symlinks: true` for `.claude`
 - **Important**: `.claude` is a symlink to `dotfiles/.claude` - requires `eval-symlinks: true`
+- **Allowed paths** (in presets.yaml):
+  - All projects from `projects.yml` (dotfiles, pon, SOKKO, ChatClinic, onlinemedic, hojocon)
+  - Global directories: `.claude`, `.serena`, `.npm`, `.cache`, `.config`, `.volta`, etc.
 - **Toggle**: `M-x claude-code-toggle-cage` to enable/disable cage temporarily
 - **Nested cage detection**: Automatically prevents nested cage execution via `IN_CAGE` environment variable
 
@@ -159,6 +162,11 @@ This dotfiles repository manages the **central project registry** (`projects.yml
 - Provide template (`projects.yml.example`)
 - Keep port management and database management functions in `.zshrc` up-to-date
 
+**Project-Specific Rules**:
+- **Global rules**: `~/.claude/rules/project-management.md` - High-level project management strategy
+- **Project details**: `~/.claude/rules/project-specific-rules.md` - Each project's DB, ports, workflows
+- All projects use **グローバル設定** from `~/.claude/rules/` (no per-project `.claude/rules/` needed)
+
 **Available Functions** (loaded via `.zshrc`):
 - `port-scan` - Display currently used ports system-wide
 - `pj-info [name]` - Show project details from projects.yml (includes database count)
@@ -231,10 +239,13 @@ databases:
 - Port management functions are in `.zshrc`
 - **Database management functions are in `db.zsh`** (sourced by .zshrc)
 - Template (`projects.yml.example`) should be kept simple and well-documented
-- **Global rules**:
-  - `~/.claude/rules/project-management.md` - Project management guidelines
+- **Global rules** (apply to ALL projects):
+  - `~/.claude/rules/project-management.md` - High-level project management strategy
+  - `~/.claude/rules/project-specific-rules.md` - Detailed rules for each project
   - `~/.claude/rules/database-management.md` - Database operations and workflows
 - **Implementation documentation**: `~/.claude/skills/db-management/SKILL.md`
+
+**Important**: When updating `projects.yml`, also update `~/.claude/rules/project-specific-rules.md` to keep them in sync.
 
 **Key Features**:
 - ✅ All passwords via environment variables (secure, not in shell history)

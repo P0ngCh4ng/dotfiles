@@ -6,11 +6,16 @@
 
 ### At the Start of EVERY Session
 
-**AUTOMATICALLY read `~/dotfiles/projects.yml`** to understand:
+**AUTOMATICALLY read these files** to understand the full context:
+1. **`~/dotfiles/projects.yml`** - Project registry (paths, ports, DB config)
+2. **`~/.claude/rules/project-specific-rules.md`** - Detailed rules for each project
+
+These files contain:
 - All available projects (dotfiles, pon, sokko, chatclinic, onlinemedic, hojocon)
 - Port assignments and potential conflicts
-- Database configurations
-- Tech stacks and paths
+- Database configurations with connection details
+- Tech stacks and recommended workflows
+- Project-specific warnings and best practices
 
 **Do NOT wait for the user to ask.** Load this context proactively.
 
@@ -133,6 +138,7 @@ Current projects (as of last update):
 
 ## Integration with Other Rules
 
+- **project-specific-rules.md**: Detailed settings for each project (DB, ports, workflows)
 - **database-management.md**: Detailed DB operation workflows
 - **~/dotfiles/CLAUDE.md**: Project-specific documentation
 - **~/dotfiles/PROJECT_MANAGEMENT.md**: Comprehensive user guide
