@@ -11,6 +11,29 @@
           }
         ],
         "description": "Check for project architecture and database documentation"
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$HOME/.claude/hooks/scripts/enforce-session-start.js\""
+          }
+        ],
+        "description": "⚠️ CRITICAL: Load project context from projects.yml (enforces 00-session-start.md)"
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "PROJECT_NAME=$(basename \"$PWD\") && TOOL_NAME=\"{{tool_name}}\" && curl -s -X POST http://localhost:3000/hook/approve -H 'Content-Type: application/json' -H \"X-Project-Name: $PROJECT_NAME\" -d '{\"message\":\"'\"$TOOL_NAME\"' tool execution requested\",\"tool\":\"'\"$TOOL_NAME\"'\",\"metadata\":{\"project_path\":\"'\"$PWD\"'\"}}' && echo \"\n⏳ Approval request sent for: $PROJECT_NAME ($TOOL_NAME)\"",
+            "blocking": true
+          }
+        ],
+        "description": "Request approval from watchOS before tool execution"
       }
     ],
     "PostToolUse": [
@@ -23,6 +46,16 @@
           }
         ],
         "description": "Track file modifications and suggest documentation updates"
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "TOOL_NAME=\"{{tool_name}}\" node \"$HOME/.claude/hooks/scripts/enforce-agent-launch.js\""
+          }
+        ],
+        "description": "⚠️ REMINDER: Auto-launch code-reviewer after code changes (enforces agent-automation.md)"
       }
     ]
   }
