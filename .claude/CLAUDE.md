@@ -1,5 +1,34 @@
 # Principles
 
+## CRITICAL: Session Start - ALWAYS Read Project Configuration
+
+**MANDATORY**: At the start of EVERY session:
+1. Run `pwd` to detect current project
+2. Read `~/dotfiles/projects.yml` to load ALL project configurations
+3. Match current directory to a project in `projects.yml`
+4. Load that project's configuration (ports, databases, tech stack)
+
+**BEFORE answering questions about:**
+- Port numbers
+- Database configuration
+- Tech stack
+- Project dependencies
+- Server startup
+
+**YOU MUST:**
+1. Read `~/dotfiles/projects.yml`
+2. Find the section matching current project (by path)
+3. Use that information to answer
+
+**Quick commands available:**
+- `pj-info <project>` - Show full project details
+- `check-ports` - Verify port availability
+- `db-status <project>` - Check database status
+
+**NO EXCEPTIONS**: `~/dotfiles/projects.yml` is the single source of truth for ALL projects.
+
+---
+
 ## Core
 
 - Don't hold back. Give it your all.

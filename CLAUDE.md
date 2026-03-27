@@ -2,6 +2,49 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚨 CRITICAL: Global Rules System
+
+**Last Updated**: 2026-03-27 - Restructured to Everything-Claude-Code architecture
+
+**Global rules are now ENFORCED by hooks and file structure:**
+
+```
+~/.claude/rules/
+├── common/                           # All projects (highest priority)
+│   ├── 00-session-start.md          # ⚠️ MANDATORY session start protocol
+│   ├── agent-automation.md
+│   ├── project-management.md
+│   ├── bug-prevention.md
+│   ├── auto-documentation.md
+│   ├── slash-command-automation.md
+│   ├── coding-style.md
+│   ├── git-workflow.md
+│   └── testing.md
+└── dotfiles/                         # Dotfiles-specific rules
+    ├── emacs-environment.md
+    ├── database-management.md
+    └── verification-strategy.md
+```
+
+**Enforcement Mechanisms:**
+
+1. **SessionStart Hook** (`~/.claude/hooks/scripts/enforce-session-start.js`)
+   - Automatically loads project context from `~/dotfiles/projects.yml`
+   - Displays project info at every session start
+   - Shows port assignments, databases, tech stack
+
+2. **PostToolUse Hook** (`~/.claude/hooks/scripts/enforce-agent-launch.js`)
+   - Reminds to launch `code-reviewer` after Edit/Write
+   - Cooldown: 5 minutes between reminders
+   - Enforces agent auto-launch rules
+
+3. **Priority System**
+   - `00-xxx.md` files = Highest priority (critical)
+   - `common/*.md` = General rules (all projects)
+   - `dotfiles/*.md` = Project-specific rules (override common)
+
+**See**: `~/.claude/rules/RESTRUCTURE-PLAN.md` for migration details
+
 ## Repository Structure
 
 This is a personal dotfiles repository that manages configuration files and development environment setup through symbolic linking and automated initialization scripts.
@@ -28,6 +71,7 @@ The dotfiles system uses a symbolic linking approach where configuration files a
 - `make deploy` - Create symlinks to home directory for all dotfiles
 - `make init` - Run platform-specific initialization scripts
 - `make update` - Pull latest changes from remote repository
+- `make update-cage` - Update cage config from projects.yml (auto-runs on deploy)
 - `make clean` - Remove all symlinks and the repository
 - `make list` - Display all tracked dotfiles
 - `make help` - Show available make targets
@@ -57,10 +101,17 @@ C-c C-l            # List all active sessions
 - **Configuration**:
   - `.zshrc` (line 194): Uses cage wrapper for sandboxing
   - `.emacs.d/elisp/claude-code-projects.el` (line 39): `claude-code-projects-use-cage t`
-  - `.config/cage/presets.yaml`: Main configuration with `eval-symlinks: true` for `.claude`
+  - `.config/cage/presets.yaml`: Auto-generated from `projects.yml` (DO NOT edit manually)
+  - **Template**: `.config/cage/presets.yaml.template` - Base configuration
+  - **Generator**: `bin/update-cage-config` - Reads projects.yml and generates config
 - **Important**: `.claude` is a symlink to `dotfiles/.claude` - requires `eval-symlinks: true`
-- **Allowed paths** (in presets.yaml):
-  - All projects from `projects.yml` (dotfiles, pon, SOKKO, ChatClinic, onlinemedic, hojocon)
+- **Dynamic Project Management**:
+  - `projects.yml` is the single source of truth for all projects
+  - `make update-cage` - Regenerate cage config from projects.yml
+  - `make deploy` - Automatically updates cage config
+  - Adding a new project: Update `projects.yml` → Run `make update-cage`
+- **Allowed paths** (auto-generated from projects.yml):
+  - All projects: dotfiles, pon, SOKKO, ChatClinic, onlinemedic, hojocon, AutomationVideo
   - Global directories: `.claude`, `.serena`, `.npm`, `.cache`, `.config`, `.volta`, etc.
 - **Toggle**: `M-x claude-code-toggle-cage` to enable/disable cage temporarily
 - **Nested cage detection**: Automatically prevents nested cage execution via `IN_CAGE` environment variable
@@ -161,6 +212,13 @@ This dotfiles repository manages the **central project registry** (`projects.yml
 - Maintain `projects.yml` schema and shell functions
 - Provide template (`projects.yml.example`)
 - Keep port management and database management functions in `.zshrc` up-to-date
+- Auto-generate cage configuration from `projects.yml`
+
+**Adding a New Project**:
+1. Edit `projects.yml` - Add project with path, ports, description, tech stack
+2. Run `make update-cage` - Auto-updates cage permissions (or `make deploy`)
+3. Update `~/.claude/rules/project-specific-rules.md` - Add project-specific rules
+4. Done! Cage sandbox now allows access to the new project
 
 **Project-Specific Rules**:
 - **Global rules**: `~/.claude/rules/project-management.md` - High-level project management strategy
@@ -241,11 +299,15 @@ databases:
 - Template (`projects.yml.example`) should be kept simple and well-documented
 - **Global rules** (apply to ALL projects):
   - `~/.claude/rules/project-management.md` - High-level project management strategy
-  - `~/.claude/rules/project-specific-rules.md` - Detailed rules for each project
+  - `~/.claude/rules/project-specific-rules.md` - **Auto-generated** from `projects.yml`
   - `~/.claude/rules/database-management.md` - Database operations and workflows
 - **Implementation documentation**: `~/.claude/skills/db-management/SKILL.md`
 
-**Important**: When updating `projects.yml`, also update `~/.claude/rules/project-specific-rules.md` to keep them in sync.
+**Auto-Generated Global Rules**:
+- `~/.claude/rules/project-specific-rules.md` is **automatically generated** from `projects.yml`
+- Running `make deploy` or `make deploy-project-rules` updates this file
+- **DO NOT edit this file manually** - edit `projects.yml` instead
+- The global rules file is loaded by Claude Code in **ALL projects**
 
 **Key Features**:
 - ✅ All passwords via environment variables (secure, not in shell history)
