@@ -29,3 +29,16 @@
 /.emacs.d/async-butecomp.log
 .emacs.d/network-security.data
 /.emacs.d/init.el.backup.*
+
+# Claude Code local runtime state (not shareable, machine/session-specific)
+/.claude-session
+/.claude/.last-cleanup
+/.claude/.last-update-result.json
+/.claude/pending-prompt.txt
+/.claude/context/
+/.claude/sessions/
+
+# Emacs elisp build/backup artifacts
+/.emacs.d/elisp/*.elc
+/.emacs.d/elisp/*.bak
+/.emacs.d/elisp/*.pre-worktree.*
