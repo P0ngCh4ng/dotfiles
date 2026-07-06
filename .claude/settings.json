@@ -17,9 +17,15 @@
       "Read(**/.gitconfig)"
     ]
   },
+  "model": "sonnet",
   "enableAllProjectMcpServers": true,
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true
   },
-  "alwaysThinkingEnabled": true
+  "alwaysThinkingEnabled": true,
+  "effortLevel": "high",
+  "tui": "fullscreen",
+  "skipDangerousModePermissionPrompt": true,
+  "autoCompactEnabled": false,
+  "agentPushNotifEnabled": true
 }
