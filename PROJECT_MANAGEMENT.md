@@ -23,6 +23,10 @@
 ├── projects.yml.example   # テンプレート（git管理）
 ├── .zshrc                 # プロジェクト管理関数
 ├── db.zsh                 # データベース管理関数
+├── bin/update-cage-config # Cage設定自動生成スクリプト
+├── .config/cage/          # Cage設定ディレクトリ
+│   ├── presets.yaml       # 自動生成（編集禁止）
+│   └── presets.yaml.template
 └── PROJECT_MANAGEMENT.md  # このファイル
 ```
 
@@ -65,7 +69,19 @@ projects:
           retention_days: 7
 ```
 
-### 3. データベースパスワードの設定
+### 3. Cage設定の自動生成
+
+```bash
+# projects.ymlから自動的にcage設定を生成
+make update-cage
+
+# または make deploy で自動的に実行される
+make deploy
+```
+
+**重要**: `.config/cage/presets.yaml` は自動生成されます。直接編集しないでください。
+
+### 4. データベースパスワードの設定
 
 ```bash
 # パスワード環境変数を設定
@@ -469,10 +485,65 @@ db-connect myproject main
 
 ---
 
+## Cage統合と自動設定
+
+### 自動生成プロセス
+
+`projects.yml`に新しいプロジェクトを追加すると、自動的にCageサンドボックスの設定が更新されます。
+
+```bash
+# 新しいプロジェクトを projects.yml に追加
+vim ~/dotfiles/projects.yml
+
+# Cage設定を自動生成
+make update-cage
+
+# または、deployで自動実行
+make deploy
+```
+
+### 生成される設定
+
+`bin/update-cage-config` スクリプトが以下を自動生成:
+
+- **許可されたパス**: projects.ymlの全プロジェクトパス
+- **グローバルディレクトリ**: `.claude`, `.serena`, `.npm`, `.cache` など
+- **シンボリックリンク解決**: `.claude` は `dotfiles/.claude` へのシンボリックリンクに対応
+
+### テンプレート vs 生成ファイル
+
+- **`.config/cage/presets.yaml.template`** - 基本設定（git管理）
+- **`.config/cage/presets.yaml`** - 自動生成（gitignored、編集禁止）
+
+**重要**: `presets.yaml` を直接編集しないでください。変更は `projects.yml` とテンプレートで行います。
+
+---
+
+## グローバルルールシステム
+
+Claude Code用のグローバルルールは `~/.claude/rules/` で管理されています:
+
+```
+~/.claude/rules/
+├── common/                   # 全プロジェクト共通
+│   ├── 00-session-start.md  # セッション開始時の必須プロトコル
+│   ├── project-management.md
+│   └── database-management.md
+└── dotfiles/                 # Dotfiles専用ルール
+    ├── emacs-environment.md
+    └── verification-strategy.md
+```
+
+**セッション開始フック**: 毎回 `projects.yml` からプロジェクト情報を自動読み込み
+
+---
+
 ## 関連ドキュメント
 
+- **README.md**: リポジトリ概要とクイックスタート
 - **CLAUDE.md**: プロジェクト全体のドキュメント
 - **~/.claude/rules/database-management.md**: DB管理のルール
+- **~/.claude/rules/project-management.md**: プロジェクト管理戦略
 - **~/.claude/skills/db-management/SKILL.md**: DB実装の詳細
 - **~/.claude/skills/db-management/examples/**: 設定例と使用例
 
@@ -489,5 +560,5 @@ db-connect myproject main
 
 ---
 
-**最終更新**: 2026-03-24
+**最終更新**: 2026-03-27
 **メンテナ**: Claude Code + User

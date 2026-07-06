@@ -13,6 +13,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ├── common/                           # All projects (highest priority)
 │   ├── 00-session-start.md          # ⚠️ MANDATORY session start protocol
 │   ├── agent-automation.md
+│   ├── mcp-automation.md            # MCP tool auto-use rules
 │   ├── project-management.md
 │   ├── bug-prevention.md
 │   ├── auto-documentation.md
@@ -55,6 +56,10 @@ This is a personal dotfiles repository that manages configuration files and deve
 - **.zshrc**: Main shell configuration with aliases, functions, and integrations
 - **db.zsh**: Database management functions (sourced by .zshrc)
 - **.emacs.d/**: Complete Emacs configuration directory with custom elisp packages
+- **bin/**: Automation scripts
+  - `update-cage-config` - Auto-generate cage configuration from projects.yml
+  - `fix-project-quarantine` - Remove macOS quarantine attributes
+  - `emacs-auto-fix` - Emacs configuration validation and auto-fixing
 - **etc/init/**: Platform-specific setup scripts for macOS and Linux
 - **Brewfile**: Homebrew package definitions for macOS dependencies
 - **opt.zsh**: Comprehensive zsh option settings for shell behavior
@@ -144,18 +149,160 @@ C-c C-o            # Run Claude Code
 **Project Management Commands**:
 ```elisp
 M-x claude-code-select-project    # Select from predefined list
+C-u M-x claude-code-select-project # Force create new session (skip prompt)
 M-x claude-code-add-project       # Add current directory to list
 M-x claude-code-remove-project    # Remove project from list
 M-x claude-code-edit-projects     # Customize project list
+```
+
+**Multiple Sessions per Project**:
+- When selecting a project with existing sessions, you'll be prompted:
+  - "Switch to: *claude:~/project*" - Switch to existing session
+  - "Create new session" - Start new session (buffer name: `*claude:~/project<2>*`)
+- Use prefix argument `C-u` to skip prompt and force new session creation
+
+**Git Worktree Integration** (避免git操作冲突):
+- **问题**: 同じプロジェクトで複数セッションを立ち上げると、git操作が競合する
+- **解決策**: git worktree を使って、ブランチごとに別ディレクトリで作業
+- **Cage対応**: worktree作成時に自動的に`~/.config/cage/presets.yaml`に追加、削除時に自動削除
+
+**📚 詳細ドキュメント**:
+- **クイックスタート**: `.claude/docs/WORKTREE-QUICKSTART.md` - 5分でわかる使い方
+- **完全ドキュメント**: `.claude/docs/WORKTREE-INTEGRATION.md` - 実装詳細・トラブルシューティング
+
+**Worktree作成方法**:
+1. `C-c C-p` (claude-code-select-project) でプロジェクト選択
+2. "Create new session" を選択
+3. "Create git worktree for this session? (y/n)" → `y`
+4. ブランチ名を入力（新規 or 既存）
+5. 自動的に `~/project-name-branch` ディレクトリが作成される
+6. そのディレクトリでClaude Codeセッションが起動
+
+**例**:
+```
+メインプロジェクト: ~/dotfiles (main ブランチ)
+Worktree 1:         ~/dotfiles-feature-a (feature-a ブランチ)
+Worktree 2:         ~/dotfiles-bugfix-123 (bugfix-123 ブランチ)
+→ 各セッションが独立した実ファイルで作業できる
+```
+
+**Worktree管理コマンド**:
+```elisp
+M-x claude-code-list-worktrees       # プロジェクトのworktree一覧を表示
+M-x claude-code-open-worktree        # 既存worktreeでセッションを開く
+M-x claude-code-cleanup-all-worktrees # 全プロジェクトの孤立worktreeを削除
+M-x claude-code-kill-session         # 現在のセッションを終了（worktreeも削除可能）
 ```
 
 **Session Management Commands**:
 ```elisp
 M-x claude-code-switch-session    # Switch between sessions (C-c C-w)
 M-x claude-code-list-sessions     # Show all active sessions (C-c C-l)
-M-x claude-code-kill-all-sessions # Kill all sessions
+M-x claude-code-kill-session      # Kill current session (with worktree cleanup)
+M-x claude-code-kill-all-sessions # Kill all sessions (with worktree cleanup)
 M-x claude-code-toggle-cage       # Toggle cage on/off
 ```
+
+**Cage設定の自動管理**:
+- Worktree作成時: `~/.config/cage/presets.yaml`に自動追加
+  ```yaml
+  allow:
+    - "/Users/pongchang/dotfiles-feature-a"  # worktree (auto-added)
+  ```
+- Worktree削除時: セッション終了時に自動削除
+- **注意**: cageはワイルドカード非対応のため、個別パス管理が必要
+
+**クラッシュ対策（自動クリーンアップ）**:
+- **問題**: PCの電源が切れた場合、worktreeディレクトリとcage設定が残る
+- **解決策**:
+  1. **起動時自動クリーンアップ**: Emacs起動5秒後に孤立したcageエントリを削除
+     - ⚠️ **安全**: cage設定のみ削除、worktreeディレクトリは残す
+     - 未コミット変更は保護される
+  2. **手動クリーンアップ**: `M-x claude-code-cleanup-all-worktrees`
+     - 全プロジェクトのworktreeをチェック
+     - アクティブセッションがないworktreeを検出
+     - 未コミット変更がある場合は ⚠️ 警告を表示
+     - force削除するかどうかを確認
+
+**未コミット変更の保護**:
+```
+セッション終了時:
+  ↓
+Worktree削除確認
+  ↓
+未コミット変更をチェック
+  ↓
+【変更あり】⚠️ WARNING: Has uncommitted changes!
+  → force削除するか確認
+【変更なし】通常削除
+```
+
+**安全機能**:
+- ✅ 自動クリーンアップはcage設定のみ（worktreeディレクトリは削除しない）
+- ✅ 手動削除時は未コミット変更を警告
+- ✅ force削除には明示的な確認が必要
+- ✅ デフォルトで`git worktree remove`は未コミット変更があると失敗
+
+**ベストプラクティス**:
+- ✅ **複数機能を同時開発**: 各機能でworktreeを作成
+- ✅ **PRレビュー中に別作業**: mainで作業しながら、別ブランチをworktreeで確認
+- ✅ **長期実験ブランチ**: worktreeで実験的変更を維持
+- ⚠️ **調査のみなら不要**: 読み取り専用ならworktreeなしでもOK
+- 🔒 **セキュリティ維持**: worktreeでもcageサンドボックスが有効
+
+**フォールバック処理（AUTO-GENERATEDマーカーがない場合）**:
+- **問題**: 手動編集でマーカーが削除された場合
+- **解決策**: 自動的にマーカーを追加してworktreeパスを登録
+- **動作**:
+  1. マーカーを探す
+  2. 見つからない → ファイル末尾にマーカーとworktreeパスを追加
+  3. インデントは既存の`allow:`エントリに合わせる
+- **エラーハンドリング**: `allow:`セクションが見つからない場合はエラーメッセージ
+
+**テストシナリオ（Emacs内で実行）**:
+
+1. **Worktree作成テスト**:
+   ```elisp
+   C-c C-p → dotfiles → Create new session
+   → "Create git worktree? y"
+   → Branch name: test-feature
+
+   確認:
+   - ~/dotfiles-test-feature ディレクトリが作成される
+   - ~/.config/cage/presets.yaml に追加される
+   ```
+
+2. **未コミット変更保護テスト**:
+   ```bash
+   # worktreeで変更を作成
+   cd ~/dotfiles-test-feature
+   echo "test" > test.txt
+
+   # Emacsで削除試行
+   M-x claude-code-kill-session
+   → "Remove worktree? ⚠️ WARNING: Has uncommitted changes!"
+   → n を選択 → worktreeが保持される ✅
+   ```
+
+3. **クリーンアップテスト**:
+   ```elisp
+   # Emacsを強制終了してworktreeを残す
+   M-x claude-code-cleanup-all-worktrees
+
+   → Found 1 orphaned worktree:
+     dotfiles: ~/dotfiles-test-feature ⚠️ HAS UNCOMMITTED CHANGES
+   → Clean up? y
+   → Force remove? n
+   → スキップされる ✅
+   ```
+
+4. **自動クリーンアップテスト**:
+   ```elisp
+   # Emacs再起動
+   # 5秒後に自動実行
+   → "Cleaned up 1 orphaned worktree(s) from cage config"
+   # cage設定から削除、ディレクトリは残る ✅
+   ```
 
 **Workflow Example**:
 1. `C-c C-p` → Select "dotfiles"
