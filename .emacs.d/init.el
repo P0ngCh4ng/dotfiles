@@ -230,7 +230,7 @@
 (use-package exec-path-from-shell
   :if (memq window-system '(mac ns x))
   :init
-  (setq exec-path-from-shell-arguments '("-l")
+  (setq exec-path-from-shell-arguments '("-i" "-l")
         exec-path-from-shell-check-startup-files nil
         exec-path-from-shell-warn-duration-millis 1000)
   (exec-path-from-shell-initialize))
@@ -437,13 +437,17 @@
   :config
   ;; claude-code-vterm-modeでも使えるように、vterm-mode-mapにcopy-modeキーバインドを追加
   ;; C-c C-tは claude-code がtransientメニューで使用しているため、C-c C-v を使用
-  (define-key vterm-mode-map (kbd "C-c C-v") 'vterm-copy-mode))
+  (define-key vterm-mode-map (kbd "C-c C-v") 'vterm-copy-mode)
+  ;; Claude Codeのゴーストテキスト（未入力補完文字）を薄く表示
+  ;; ANSIカラー8（bright black）= vterm-color-blackの:background
+  (set-face-attribute 'vterm-color-black nil
+                      :background "#666666"))
 
 ;; Claude Code integration (official package)
-;; C-c c キー押下時に自動ロード
+;; C-c C-c キー押下時に自動ロード
 (use-package claude-code
   :ensure t
-  :bind (("C-c c" . claude-code-transient))
+  :bind (("C-c C-c" . claude-code-transient))
   :config
   ;; Optional: Set default model or other options
   ;; (setq claude-code-default-model "sonnet")
@@ -457,22 +461,33 @@
   :ensure nil
   :load-path "elisp"
   :bind (("C-c C-p" . claude-code-select-project)
+         ("C-c C-n" . claude-code-run-here)
          ("C-c C-w" . claude-code-switch-session)
          ("C-c C-l" . claude-code-list-sessions))
   :commands (claude-code-select-project
+             claude-code-run-here
              claude-code-add-project
              claude-code-remove-project
              claude-code-edit-projects
              claude-code-switch-session
              claude-code-list-sessions
+             claude-code-kill-session
+             claude-code-list-worktrees
+             claude-code-open-worktree
+             claude-code-cleanup-all-worktrees
              claude-code-kill-all-sessions
-             claude-code-toggle-cage)
+             claude-code-toggle-cage
+             claude-code-toggle-tree
+             claude-code-send-f1
+             claude-code-send-f2)
   :config
   ;; Enable cage integration with automatic nested cage detection
   ;; Cage is automatically disabled if already running inside cage (IN_CAGE=1)
   ;; to prevent nested cage issues and EPERM errors
   (setq claude-code-projects-use-cage t)
-  (setq claude-code-projects-cage-config "~/.config/cage/presets.yaml"))
+  (setq claude-code-projects-cage-config "~/.config/cage/presets.yaml")
+
+  )
 
 (use-package magit
 
