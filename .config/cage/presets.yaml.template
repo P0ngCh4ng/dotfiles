@@ -1,0 +1,27 @@
+presets:
+  claude-code:
+    allow:
+      - "/Users/pongchang/.claude.json"
+      - "."  # カレントディレクトリ（プロジェクトディレクトリから起動するため）
+      - "/Users/pongchang/tmp"
+      - "/Users/pongchang/.serena"  # Serenaグローバル設定・ログ
+      - path: "/tmp"
+        eval-symlinks: true
+      - path: "/Users/pongchang/.claude"  # Claude Code設定・履歴（シンボリックリンク）
+        eval-symlinks: true
+      - "/Users/pongchang/.npm"  # npm キャッシュ
+      - "/Users/pongchang/.cache"  # 各種ツールのキャッシュ
+      - "/Users/pongchang/.config"  # 設定ファイル
+      - "/Users/pongchang/.volta"  # Node.js バージョン管理
+      - "/Users/pongchang/.local"  # ローカルパッケージ
+      - "/Users/pongchang/homebrew"  # Homebrew（macOS）
+      - "/Users/pongchang/Library/Caches/ms-playwright"  # Playwright
+      # プロジェクトディレクトリ（projects.yml管理）
+      # AUTO-GENERATED: Do not edit below this line
+{{PROJECTS}}
+    allow-keychain: true
+
+auto-presets:
+  - command: claude
+    presets:
+      - claude-code

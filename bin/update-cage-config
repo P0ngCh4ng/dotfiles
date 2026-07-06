@@ -1,0 +1,147 @@
+#!/usr/bin/env zsh
+# Update cage configuration from projects.yml
+# Usage: update-cage-config
+
+set -euo pipefail
+
+SCRIPT_DIR="${0:A:h}"
+DOTFILES_DIR="${SCRIPT_DIR:h}"
+PROJECTS_FILE="${DOTFILES_DIR}/projects.yml"
+CAGE_CONFIG="${HOME}/.config/cage/presets.yaml"
+CAGE_TEMPLATE="${DOTFILES_DIR}/.config/cage/presets.yaml.template"
+
+# Clean up any leftover tmp file on exit (covers set -e failures and signals)
+trap 'rm -f "${CAGE_CONFIG}.tmp"' EXIT
+
+# Check if required files exist
+if [[ ! -f "$PROJECTS_FILE" ]]; then
+  echo "❌ Error: projects.yml not found at $PROJECTS_FILE"
+  exit 1
+fi
+
+if [[ ! -f "$CAGE_TEMPLATE" ]]; then
+  echo "⚠️  Template not found, creating from current config..."
+  mkdir -p "${CAGE_TEMPLATE:h}"
+
+  # Create template (everything before project directories)
+  cat > "$CAGE_TEMPLATE" <<'EOF'
+presets:
+  claude-code:
+    allow:
+      - "/Users/pongchang/.claude.json"
+      - "."  # カレントディレクトリ（プロジェクトディレクトリから起動するため）
+      - "/Users/pongchang/tmp"
+      - "/Users/pongchang/.serena"  # Serenaグローバル設定・ログ
+      - path: "/tmp"
+        eval-symlinks: true
+      - path: "/Users/pongchang/.claude"  # Claude Code設定・履歴（シンボリックリンク）
+        eval-symlinks: true
+      - "/Users/pongchang/.npm"  # npm キャッシュ
+      - "/Users/pongchang/.cache"  # 各種ツールのキャッシュ
+      - "/Users/pongchang/.config"  # 設定ファイル
+      - "/Users/pongchang/.volta"  # Node.js バージョン管理
+      - "/Users/pongchang/.local"  # ローカルパッケージ
+      - "/Users/pongchang/homebrew"  # Homebrew（macOS）
+      - "/Users/pongchang/Library/Caches/ms-playwright"  # Playwright
+      # プロジェクトディレクトリ（projects.yml管理）
+      # AUTO-GENERATED: Do not edit below this line
+{{PROJECTS}}
+    allow-keychain: true
+
+auto-presets:
+  - command: claude
+    presets:
+      - claude-code
+EOF
+fi
+
+# Extract project paths from projects.yml
+echo "📖 Reading projects from $PROJECTS_FILE..."
+
+# Use Python to parse YAML and extract paths
+PROJECT_PATHS=$(python3 <<EOF
+import yaml
+import os
+
+with open("$PROJECTS_FILE", 'r') as f:
+    data = yaml.safe_load(f)
+
+if 'projects' in data:
+    for project, config in data['projects'].items():
+        if 'path' in config:
+            path = os.path.expanduser(config['path'])
+            print(f'      - "{path}"')
+EOF
+)
+
+if [[ -z "$PROJECT_PATHS" ]]; then
+  echo "❌ No projects found in $PROJECTS_FILE"
+  exit 1
+fi
+
+echo "✅ Found projects:"
+echo "$PROJECT_PATHS"
+
+# Preserve the AUTO-GENERATED WORKTREES marker block from the existing config
+# so that worktree entries managed by Emacs (claude-code-projects.el) survive
+# regeneration.
+WORKTREE_BLOCK=""
+if [[ -f "$CAGE_CONFIG" ]]; then
+  WORKTREE_BLOCK=$(awk '
+    /^[[:space:]]*# === AUTO-GENERATED WORKTREES START ===$/ { capture=1 }
+    capture { print }
+    /^[[:space:]]*# === AUTO-GENERATED WORKTREES END ===$/   { if (capture) { capture=0; exit } }
+  ' "$CAGE_CONFIG")
+  if [[ -n "$WORKTREE_BLOCK" ]]; then
+    echo "🔒 Preserving existing WORKTREE marker block ($(echo "$WORKTREE_BLOCK" | wc -l | tr -d ' ') lines)"
+  fi
+fi
+
+# Generate cage config from template
+echo ""
+echo "🔧 Generating cage config..."
+
+# Replace {{PROJECTS}} placeholder with actual paths.
+# Use Python instead of sed to avoid delimiter conflicts when paths contain `|`.
+PROJECT_PATHS="$PROJECT_PATHS" CAGE_TEMPLATE="$CAGE_TEMPLATE" CAGE_CONFIG_TMP="$CAGE_CONFIG.tmp" \
+python3 <<'PYEOF'
+import os
+template = open(os.environ["CAGE_TEMPLATE"]).read()
+paths = os.environ["PROJECT_PATHS"]
+result = template.replace("{{PROJECTS}}", paths)
+open(os.environ["CAGE_CONFIG_TMP"], "w").write(result)
+PYEOF
+
+# Re-inject the preserved worktree block immediately before `allow-keychain:`.
+if [[ -n "$WORKTREE_BLOCK" ]]; then
+  # Use python for safe insertion (avoids sed quoting issues with multiline content).
+  WORKTREE_BLOCK="$WORKTREE_BLOCK" python3 <<EOF
+import os, sys
+path = "$CAGE_CONFIG.tmp"
+block = os.environ["WORKTREE_BLOCK"].rstrip("\n") + "\n"
+with open(path) as f:
+    lines = f.readlines()
+out = []
+inserted = False
+for line in lines:
+    stripped = line.lstrip()
+    if not inserted and not stripped.startswith("#") and stripped.startswith("allow-keychain:"):
+        out.append(block)
+        inserted = True
+    out.append(line)
+if not inserted:
+    sys.stderr.write("⚠️  Could not find allow-keychain: anchor; appending worktree block at EOF\n")
+    out.append(block)
+with open(path, "w") as f:
+    f.writelines(out)
+EOF
+fi
+
+# Move the temp file to the actual config
+mkdir -p "${CAGE_CONFIG:h}"
+mv "$CAGE_CONFIG.tmp" "$CAGE_CONFIG"
+
+echo "✅ Cage config updated: $CAGE_CONFIG"
+echo ""
+echo "🔍 Verify with:"
+echo "  cage -dry-run -config $CAGE_CONFIG -preset claude-code echo test"

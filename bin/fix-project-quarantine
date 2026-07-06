@@ -1,0 +1,53 @@
+#!/usr/bin/env zsh
+# Fix macOS quarantine attribute on project directories
+# Must be run outside of cage (normal terminal)
+# Usage: fix-project-quarantine [project-path]
+
+set -euo pipefail
+
+if [[ -n "${IN_CAGE:-}" ]]; then
+  echo "❌ Error: This script must be run outside of cage"
+  echo "Please run from a normal terminal (not Emacs)"
+  exit 1
+fi
+
+PROJECT_PATH="${1:-}"
+
+if [[ -z "$PROJECT_PATH" ]]; then
+  echo "Usage: fix-project-quarantine <project-path>"
+  echo ""
+  echo "Example:"
+  echo "  fix-project-quarantine ~/AutomationVideo"
+  exit 1
+fi
+
+# Expand path
+PROJECT_PATH="${PROJECT_PATH/#\~/$HOME}"
+
+if [[ ! -d "$PROJECT_PATH" ]]; then
+  echo "❌ Error: Directory not found: $PROJECT_PATH"
+  exit 1
+fi
+
+echo "🔍 Checking quarantine attribute on: $PROJECT_PATH"
+if xattr -l "$PROJECT_PATH" 2>/dev/null | grep -q "com.apple.quarantine"; then
+  echo "⚠️  Quarantine attribute found, removing..."
+  xattr -r -d com.apple.quarantine "$PROJECT_PATH" 2>&1 | grep -v "No such xattr" || true
+  echo "✅ Quarantine attribute removed"
+else
+  echo "✅ No quarantine attribute found"
+fi
+
+# Test write permission
+TEST_FILE="${PROJECT_PATH}/.test-write-$RANDOM.tmp"
+if touch "$TEST_FILE" 2>/dev/null; then
+  rm "$TEST_FILE"
+  echo "✅ Write permission OK"
+else
+  echo "❌ Write permission denied"
+  echo "You may need to run: chmod -R u+w $PROJECT_PATH"
+  exit 1
+fi
+
+echo ""
+echo "✅ Project is ready: $PROJECT_PATH"
