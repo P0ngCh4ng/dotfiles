@@ -192,7 +192,7 @@ alias ...='cd ../..'
 alias ....='cd ../../..'
 # Claude Code aliases
 alias claude='CLAUDE_CODE_DISABLE_ITERM2=1 cage -config "$HOME/.config/cage/presets.yaml" claude --dangerously-skip-permissions'  # With Cage wrapper
-alias claude-raw='CLAUDE_CODE_DISABLE_ITERM2=1 ~/homebrew/bin/claude --dangerously-skip-permissions'  # Direct Claude Code (no Cage)
+alias claude-raw='~/.local/bin/claude --dangerously-skip-permissions'  # Direct Claude Code (no Cage)
 zplug 'zsh-users/zsh-autosuggestions'
 zplug 'zsh-users/zsh-completions'
 zplug 'zsh-users/zsh-syntax-highlighting'
