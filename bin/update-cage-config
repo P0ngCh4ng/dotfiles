@@ -42,7 +42,11 @@ presets:
       - "/Users/pongchang/.volta"  # Node.js バージョン管理
       - "/Users/pongchang/.local"  # ローカルパッケージ
       - "/Users/pongchang/homebrew"  # Homebrew（macOS）
+      - "/Users/pongchang/.fly"  # Fly.io CLI設定
       - "/Users/pongchang/Library/Caches/ms-playwright"  # Playwright
+      - "/Users/pongchang/Library/Caches/ms-playwright-mcp"  # Playwright MCP (@playwright/mcp)
+      - "/Users/pongchang/Library/Caches/uv"  # uv/uvx キャッシュ（serena MCPが使用）
+      - "/Users/pongchang/.docker"  # Docker CLI/buildx 状態
       # プロジェクトディレクトリ（projects.yml管理）
       # AUTO-GENERATED: Do not edit below this line
 {{PROJECTS}}
