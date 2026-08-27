@@ -182,6 +182,27 @@ pj-info() {
     fi
 }
 
+# 常時稼働中のWebプロジェクトを一覧できるダッシュボードをブラウザで開く
+# (状態は既存の check-ports/port-scan と同じ lsof 実測に基づき、開いている間ずっとライブ更新される)
+pj-dashboard() {
+    local script="$HOME/dotfiles/bin/generate-project-dashboard"
+    local dash_port=9797
+    local url="http://localhost:${dash_port}/"
+
+    if [[ ! -x "$script" ]]; then
+        echo "Error: $script not found or not executable" >&2
+        return 1
+    fi
+
+    if ! curl -s -o /dev/null -m 1 "${url}api/status"; then
+        nohup "$script" --serve --port "$dash_port" >/tmp/pj-dashboard.log 2>&1 &
+        disown
+        sleep 0.5
+    fi
+
+    open "$url"
+}
+
 # ============================================
 # Database Management Functions (sourced from db.zsh)
 # ============================================
@@ -215,3 +236,8 @@ zplug load --verbose
 
 # Added by Antigravity
 export PATH="/Users/pongchang/.antigravity/antigravity/bin:$PATH"
+# The following lines have been added by Docker Desktop to enable Docker CLI completions.
+fpath=(/Users/pongchang/.docker/completions $fpath)
+autoload -Uz compinit
+compinit
+# End of Docker CLI completions

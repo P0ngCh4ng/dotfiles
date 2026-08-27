@@ -12,6 +12,7 @@ help:
 	@echo "make test                  #=> Test dotfiles and init scripts"
 	@echo "make update                #=> Fetch changes for this repo"
 	@echo "make update-cage           #=> Update cage config from projects.yml"
+	@echo "make dashboard-service     #=> Install/reload pj-dashboard launchd agent (auto-start at login)"
 	@echo "make install               #=> Run make update, deploy, init"
 	@echo "make clean                 #=> Remove the dot files and this repo"
 
@@ -31,6 +32,9 @@ update:
 update-cage:
 	@echo "Updating cage config from projects.yml..."
 	@$(DOTPATH)/bin/update-cage-config
+
+dashboard-service:
+	@$(DOTPATH)/bin/install-dashboard-service
 
 install: update deploy init
 	@exec $$SHELL

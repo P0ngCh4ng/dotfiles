@@ -9,6 +9,8 @@
 | `update-cage-config` | Cage設定自動生成 | プロジェクト追加時 |
 | `fix-project-quarantine` | macOS隔離属性削除 | 権限エラー時 |
 | `emacs-auto-fix` | Emacs設定自動修正 | 設定エラー時 |
+| `generate-project-dashboard` | 稼働中Webプロジェクトの一覧ダッシュボード（`pj-dashboard`が呼ぶ） | いつでも |
+| `install-dashboard-service` | ダッシュボードをlaunchd常駐サービス化 | 初回セットアップ時（**cageの外で実行**） |
 
 ---
 
@@ -251,6 +253,76 @@ if (fixResult.success && fixResult.fixCount > 0) {
 | `success: true, fixCount > 0` | 修正を適用 |
 | `success: true, fixCount: 0` | 修正不要 |
 | `success: false` | エラー（ファイルが見つからない等） |
+
+---
+
+## generate-project-dashboard / install-dashboard-service
+
+### 概要
+
+`generate-project-dashboard` は `projects.yml` を元に、PC上で今動いているWebプロジェクトを一覧できるローカルダッシュボードを生成・配信するPythonスクリプト。実行中ポートの判定は `lsof`（`check-ports`/`port-scan` と同じ実測方式）、`projects.yml` 未登録のプロセスも`cwd`/コマンドラインから識別してカード表示し、その場で「既存プロジェクトに追加」「新規登録」「停止」ができる。
+
+`install-dashboard-service` は、このダッシュボードサーバーを**ログイン時に自動起動する常駐サービス（launchd LaunchAgent）として登録**するための一回限りのセットアップスクリプト。
+
+### 手順書（初回セットアップ）
+
+**⚠️ 重要: このコマンドは cage の外（通常のターミナル / cage を経由しないシェル）で実行してください。**
+
+`launchctl` はXPC経由でlaunchdと通信するため、cageサンドボックス内（`IN_CAGE=1`環境、つまりEmacsの`C-c c`から起動したClaude Codeセッションや`cage`ラッパー経由のシェル）からは `operation not permitted` で失敗し、サービスを有効化できません。`ps`が同じ理由でcage内では使えないのと同じ制約です。
+
+**手順:**
+
+1. cageを経由しない通常のターミナル（Terminal.app / iTerm2など）を開く
+2. 以下を実行:
+   ```bash
+   cd ~/dotfiles
+   make dashboard-service
+   ```
+3. 成功すると、以下のような出力が出る:
+   ```
+   ✅ Wrote /Users/pongchang/Library/LaunchAgents/com.pongchang.pj-dashboard.plist
+   ✅ Dashboard is running at http://localhost:9797/ (auto-starts at login from now on)
+
+   To disable autostart later:
+     launchctl unload ~/Library/LaunchAgents/com.pongchang.pj-dashboard.plist && rm ...
+   ```
+4. ブラウザで `http://localhost:9797/` を開いて確認、または以後は `pj-dashboard` （zsh関数）でいつでも開ける
+
+### 動作（`install-dashboard-service` の中身）
+
+1. `python3` の絶対パスを検出（`command -v python3`）
+2. `~/Library/LaunchAgents/com.pongchang.pj-dashboard.plist` を生成
+   - `ProgramArguments`: `<python3> <dotfiles>/bin/generate-project-dashboard --serve --port 9797`
+   - `RunAtLoad: true`（ログイン時に自動起動）
+   - `KeepAlive: true`（落ちたら自動再起動）
+   - ログ出力先: `~/dotfiles/.dashboard/launchd.log`
+3. `launchctl unload`（既存分の後始末、失敗しても無視） → `launchctl load -w` で有効化
+4. `curl` で `http://localhost:9797/api/status` に疎通確認
+
+### 検証済み事項
+
+- 生成されるplistのXML構文は `plutil -lint` でOKを確認済み
+- `ProgramArguments` に埋め込む `python3` / スクリプトの絶対パスは実際の環境値で確認済み
+- `lsof` (`/usr/sbin/lsof`)・`ps` (`/bin/ps`)・`kill` (`/bin/kill`) は launchd のデフォルトPATH（`/usr/bin:/bin:/usr/sbin:/sbin`）内にあり、追加のPATH設定なしで動作する
+- **`launchctl load` の実行自体は cage サンドボックス内から検証不可**（上記の制約により）。cageの外で実行した際に問題があれば、`~/dotfiles/.dashboard/launchd.log` を確認してください
+
+### 無効化・やり直し
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.pongchang.pj-dashboard.plist
+rm ~/Library/LaunchAgents/com.pongchang.pj-dashboard.plist
+```
+
+設定を変更して再セットアップしたい場合は、`make dashboard-service` を再実行すれば `unload` → 再生成 → `load` を自動でやり直す。
+
+### トラブルシューティング
+
+| 問題 | 解決方法 |
+|------|----------|
+| `operation not permitted`（launchctl） | cageの外（通常のターミナル）で実行しているか確認 |
+| サービス有効化後もポートに接続できない | `cat ~/dotfiles/.dashboard/launchd.log` でエラーを確認 |
+| ポート9797が別プロセスに使われている | `lsof -iTCP:9797 -sTCP:LISTEN` で確認し、該当プロセスを停止するか `install-dashboard-service` 内の `PORT` を変更 |
+| launchdサービスの状態を見たい | `launchctl list \| grep pj-dashboard` |
 
 ---
 

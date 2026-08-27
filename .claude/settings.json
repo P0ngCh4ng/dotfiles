@@ -17,13 +17,28 @@
       "Read(**/.gitconfig)"
     ]
   },
-  "model": "sonnet",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$HOME/.claude/hooks/scripts/open-daily-dashboard.sh\"",
+            "async": true
+          }
+        ],
+        "description": "Once per day, ensure the project dashboard server is running and open it in the browser"
+      }
+    ]
+  },
+  "model": "opus",
   "enableAllProjectMcpServers": true,
   "enabledPlugins": {
     "typescript-lsp@claude-plugins-official": true
   },
   "alwaysThinkingEnabled": true,
-  "effortLevel": "high",
+  "effortLevel": "medium",
   "tui": "fullscreen",
   "skipDangerousModePermissionPrompt": true,
   "autoCompactEnabled": false,

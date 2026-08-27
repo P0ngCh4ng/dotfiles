@@ -42,3 +42,7 @@
 /.emacs.d/elisp/*.elc
 /.emacs.d/elisp/*.bak
 /.emacs.d/elisp/*.pre-worktree.*
+
+# Generated project dashboard (machine-specific, regenerated from projects.yml)
+/.dashboard/
+/bin/__pycache__/

@@ -1,0 +1,1159 @@
+#!/usr/bin/env python3
+"""Generate and serve a local dashboard listing all projects from projects.yml.
+
+Unlike a browser-side fetch() probe (unreliable for non-HTTP ports and easy
+to get wrong), liveness is checked the same way the existing `check-ports` /
+`port-scan` zsh functions do: by asking the OS which TCP ports are actually
+LISTENing via `lsof`. That check runs fresh on every poll, server-side.
+
+Usage:
+  generate-project-dashboard            # one-shot HTML snapshot, no live JS
+  generate-project-dashboard --serve [--port N]
+      # regenerate + serve on http://localhost:N/ with a same-origin
+      # /api/status endpoint the page polls every few seconds
+
+Output: ~/dotfiles/.dashboard/index.html
+"""
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from datetime import datetime
+from http.server import SimpleHTTPRequestHandler
+from pathlib import Path
+from socketserver import TCPServer
+
+try:
+    import yaml
+except ImportError:
+    sys.exit("Error: PyYAML is required. Install with: pip3 install pyyaml")
+
+DOTFILES_DIR = Path(__file__).resolve().parent.parent
+PROJECTS_FILE = DOTFILES_DIR / "projects.yml"
+OUTPUT_DIR = DOTFILES_DIR / ".dashboard"
+OUTPUT_FILE = OUTPUT_DIR / "index.html"
+DEFAULT_PORT = 9797
+HOME_DIR = str(Path.home())
+
+# Ports considered databases/infra rather than app servers, purely for the
+# 🗄 icon vs 🌐 link styling. Liveness is checked for every port the same way.
+KNOWN_DB_PORTS = {3306, 5432, 6379, 27017, 5433, 1433, 11211, 9200, 5984}
+
+PROJECT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
+
+
+def yaml_quote(value):
+    """Wrap a free-text string as a safe double-quoted YAML scalar so
+    user-supplied text (from the registration form) can never break the
+    surrounding YAML structure or inject additional keys."""
+    escaped = str(value).replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
+def load_projects():
+    if not PROJECTS_FILE.exists():
+        sys.exit(f"Error: projects.yml not found at {PROJECTS_FILE}")
+    data = yaml.safe_load(PROJECTS_FILE.read_text()) or {}
+    return data.get("projects", {}) or {}
+
+
+def classify_ports(project):
+    db_ports = set(KNOWN_DB_PORTS)
+    for db in project.get("databases", []) or []:
+        port = db.get("port")
+        if port:
+            db_ports.add(int(port))
+
+    ports = project.get("ports", []) or []
+    web_ports = sorted(p for p in ports if int(p) not in db_ports)
+    data_ports = sorted(p for p in ports if int(p) in db_ports)
+    return web_ports, data_ports
+
+
+def build_entries(projects):
+    entries = []
+    for name, project in sorted(projects.items()):
+        project = project or {}
+        web_ports, data_ports = classify_ports(project)
+        entries.append(
+            {
+                "name": name,
+                "path": project.get("path", ""),
+                "description": project.get("description", ""),
+                "tech": project.get("tech", []) or [],
+                "web_ports": web_ports,
+                "data_ports": data_ports,
+                "db_types": {
+                    int(db["port"]): db.get("type", "db")
+                    for db in (project.get("databases", []) or [])
+                    if db.get("port")
+                },
+            }
+        )
+    return entries
+
+
+def fetch_process_details(pids):
+    """Batched lookup of full command line + working directory for a set of
+    pids (one `ps` call + one `lsof` call total, not one per process). A
+    truncated lsof COMMAND like "ControlCe" or "Adobe\\x20" isn't enough to
+    tell whether an unregistered port belongs to a real project worth
+    registering -- the full command line and cwd usually are."""
+    pids = sorted({str(p) for p in pids if p})
+    details = {p: {"cmdline": "", "cwd": ""} for p in pids}
+    if not pids:
+        return details
+
+    try:
+        out = subprocess.run(
+            ["ps", "-ww", "-p", ",".join(pids), "-o", "pid=,command="],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout
+        for line in out.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            pid_str, _, cmd = line.partition(" ")
+            if pid_str in details:
+                details[pid_str]["cmdline"] = cmd.strip()
+    except Exception:
+        pass
+
+    try:
+        out = subprocess.run(
+            ["lsof", "-a", "-p", ",".join(pids), "-d", "cwd", "-Fpn"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout
+        current_pid = None
+        for line in out.splitlines():
+            if not line:
+                continue
+            tag, value = line[0], line[1:]
+            if tag == "p":
+                current_pid = value
+            elif tag == "n" and current_pid in details:
+                details[current_pid]["cwd"] = value
+    except Exception:
+        pass
+
+    return details
+
+
+def scan_listening():
+    """Same technique as the existing check-ports/port-scan zsh functions:
+    ask lsof which TCP ports are actually LISTENing right now. Also enriches
+    each entry with the owning process's full command line and cwd, so
+    unregistered ports (not in projects.yml) can be identified well enough
+    to decide whether to register them -- a bare port number can't do that."""
+    try:
+        out = subprocess.run(
+            ["lsof", "-iTCP", "-sTCP:LISTEN", "-n", "-P"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout
+    except Exception:
+        return {}
+
+    # NAME column looks like "*:3000" or "127.0.0.1:3000" or "[::1]:3000",
+    # but lsof also appends a trailing "(LISTEN)" state field after it, so
+    # the port field is NOT necessarily the last token on the line -- find
+    # the address:port token explicitly instead of trusting a fixed index.
+    by_port = {}
+    for line in out.splitlines()[1:]:
+        fields = line.split()
+        if len(fields) < 2:
+            continue
+        command, pid = fields[0], fields[1]
+        for field in fields:
+            m = re.search(r":(\d+)$", field)
+            if m:
+                port = int(m.group(1))
+                by_port.setdefault(port, {"port": port, "command": command, "pid": pid})
+                break
+
+    details = fetch_process_details(item["pid"] for item in by_port.values())
+    for item in by_port.values():
+        d = details.get(item["pid"], {"cmdline": "", "cwd": ""})
+        item["cmdline"] = d["cmdline"]
+        item["cwd"] = d["cwd"]
+    return by_port
+
+
+def register_project(payload):
+    """Append a new project to projects.yml from the dashboard's inline
+    registration form. Returns (ok, error_message_or_None)."""
+    name = str(payload.get("name", "")).strip().lower()
+    path = str(payload.get("path", "")).strip()
+    description = str(payload.get("description", "")).strip()
+    tech = [t.strip() for t in str(payload.get("tech", "")).split(",") if t.strip()]
+
+    try:
+        ports = sorted({int(p) for p in (payload.get("ports") or [])})
+    except (TypeError, ValueError):
+        return False, "invalid ports"
+
+    if not PROJECT_NAME_RE.match(name) or name == "projects":
+        return False, "name must be lowercase letters/digits/-/_ (and not 'projects')"
+    if not path:
+        return False, "path is required"
+
+    try:
+        existing = load_projects()
+    except Exception as e:
+        return False, f"could not read projects.yml: {e}"
+    if name in existing:
+        return False, f'"{name}" is already registered'
+
+    lines = [
+        f"  {name}:",
+        f"    path: {yaml_quote(path)}",
+        f"    ports: [{', '.join(str(p) for p in ports)}]",
+    ]
+    if description:
+        lines.append(f"    description: {yaml_quote(description)}")
+    if tech:
+        lines.append(f"    tech: [{', '.join(yaml_quote(t) for t in tech)}]")
+    block = "\n" + "\n".join(lines) + "\n"
+
+    with PROJECTS_FILE.open("a", encoding="utf-8") as f:
+        f.write(block)
+
+    try:
+        load_projects()
+    except Exception as e:
+        return False, f"written but projects.yml no longer parses ({e}) -- please fix it by hand"
+
+    return True, None
+
+
+def add_ports_to_project(name, new_ports):
+    """Add port(s) to an *already-registered* project's `ports:` line.
+
+    Used when a discovered process's cwd is inside a project that's already
+    in projects.yml (e.g. a second dev-server port for `onlinemedic`) -- in
+    that case the right move is extending the existing entry, not creating a
+    same-named duplicate. Done as a targeted single-line text edit (find the
+    project's block, find its `ports:` line, rewrite just that line) rather
+    than a full YAML re-dump, so every comment/blank line/formatting choice
+    elsewhere in the hand-maintained file is left completely untouched.
+    """
+    try:
+        existing = load_projects()
+    except Exception as e:
+        return False, f"could not read projects.yml: {e}"
+    if name not in existing:
+        return False, f'"{name}" is not a registered project'
+
+    block_start_re = re.compile(r"^  " + re.escape(name) + r":\s*\n?$")
+    other_key_re = re.compile(r"^  [A-Za-z0-9_-]+:\s*\n?$")
+    # Captures an optional trailing "# comment" (e.g. "ports: [8888]  #
+    # webpack devServer") so it's preserved verbatim on rewrite instead of
+    # being silently dropped.
+    ports_line_re = re.compile(r"^(\s+)ports:\s*\[([^\]]*)\](\s*#.*)?\s*\n?$")
+
+    lines = PROJECTS_FILE.read_text().splitlines(keepends=True)
+    in_block = False
+    for i, line in enumerate(lines):
+        if not in_block:
+            if block_start_re.match(line):
+                in_block = True
+            continue
+        if other_key_re.match(line):
+            break
+        m = ports_line_re.match(line)
+        if m:
+            indent, existing_ports, comment = m.groups()
+            ports = {int(p.strip()) for p in existing_ports.split(",") if p.strip()}
+            ports.update(int(p) for p in new_ports)
+            lines[i] = f"{indent}ports: [{', '.join(str(p) for p in sorted(ports))}]{comment or ''}\n"
+            PROJECTS_FILE.write_text("".join(lines))
+            try:
+                load_projects()
+            except Exception as e:
+                return False, f"written but projects.yml no longer parses ({e}) -- please fix it by hand"
+            return True, None
+
+    return False, f'"{name}" has no `ports:` line to update'
+
+
+HTML_TEMPLATE = """<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Local Project Dashboard</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8;
+    --card-bg: #ffffff;
+    --border: #e2e4e9;
+    --text: #1b1e24;
+    --text-dim: #6b7280;
+    --accent: #4361ee;
+    --up: #16a34a;
+    --down: #dc2626;
+    --checking: #9ca3af;
+    --badge-bg: #eef1f6;
+    --warn-bg: #fef3c7;
+    --warn-text: #92400e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a;
+      --card-bg: #1c1f26;
+      --border: #2b2f38;
+      --text: #e7e9ee;
+      --text-dim: #9aa1ad;
+      --accent: #7c9bff;
+      --up: #34d399;
+      --down: #f87171;
+      --checking: #6b7280;
+      --badge-bg: #262a33;
+      --warn-bg: #3f2d0a;
+      --warn-text: #fcd34d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 32px 24px 64px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Kaku Gothic ProN", sans-serif;
+  }
+  header {
+    max-width: 1100px;
+    margin: 0 auto 12px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  h1 { font-size: 20px; margin: 0; }
+  .meta { color: var(--text-dim); font-size: 13px; }
+  .summary { color: var(--text-dim); font-size: 13px; }
+  .summary b { color: var(--text); }
+  #offline-banner {
+    display: none;
+    max-width: 1100px;
+    margin: 0 auto 20px;
+    background: var(--warn-bg);
+    color: var(--warn-text);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+  #offline-banner code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: rgba(0,0,0,0.15);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+  #unregistered-banner {
+    display: none;
+    max-width: 1100px;
+    margin: 0 auto 20px;
+    background: var(--down);
+    color: #fff;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  #unregistered-banner a { color: #fff; text-decoration: underline; }
+  .grid {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+  }
+  .card.extra-card {
+    border: 1px dashed var(--down);
+  }
+  .card.extra-card .desc { color: var(--down); font-weight: 600; }
+  .match-note {
+    color: var(--accent);
+    font-size: 12px;
+    font-weight: 600;
+    margin: -4px 0 10px;
+  }
+  .card-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .dismiss-card {
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--text-dim);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .dismiss-card:hover { border-color: var(--down); color: var(--down); }
+  .dismiss-card:disabled { opacity: 0.5; cursor: default; }
+  .dismiss-card.primary { border-color: var(--accent); color: var(--accent); }
+  .dismiss-card.danger:hover { border-color: var(--down); background: var(--down); color: #fff; }
+  .card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .register-form {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .register-form input {
+    width: 100%;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--card-bg);
+    color: var(--text);
+    font-size: 12px;
+    box-sizing: border-box;
+  }
+  .register-form .error { color: var(--down); font-size: 11px; }
+  .card h2 {
+    margin: 0 0 4px;
+    font-size: 16px;
+  }
+  .card .desc {
+    color: var(--text-dim);
+    font-size: 13px;
+    margin: 0 0 10px;
+    line-height: 1.4;
+  }
+  .path {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    word-break: break-all;
+  }
+  .process-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .process-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--badge-bg);
+    border-radius: 999px;
+    padding: 2px 4px 2px 10px;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .process-pill button {
+    border: none;
+    background: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 2px 6px;
+  }
+  .process-pill button:hover { color: var(--down); }
+  .cmdline {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    color: var(--text-dim);
+    background: var(--badge-bg);
+    border-radius: 6px;
+    padding: 4px 6px;
+    margin-bottom: 10px;
+    max-height: 3.2em;
+    overflow: hidden;
+    word-break: break-all;
+  }
+  .tech {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .tech span {
+    background: var(--badge-bg);
+    color: var(--text-dim);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+  }
+  .ports {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .port-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--badge-bg);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    text-decoration: none;
+    color: var(--text);
+  }
+  a.port-badge:hover { outline: 1px solid var(--accent); }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--checking);
+    flex-shrink: 0;
+  }
+  .dot.up { background: var(--up); }
+  .dot.down { background: var(--down); }
+  .db-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--badge-bg);
+    border-radius: 8px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .none { color: var(--text-dim); font-size: 12px; }
+  .refresh-btn {
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    color: var(--text);
+    border-radius: 8px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .refresh-btn:hover { border-color: var(--accent); }
+  .ignored-link {
+    color: #fff;
+    opacity: 0.85;
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: 12px;
+    background: none;
+    border: none;
+    font-weight: 400;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Local Project Dashboard</h1>
+    <div class="meta">projects.yml から生成 &middot; 生成日時: __GENERATED_AT__</div>
+  </div>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <div class="summary" id="summary">checking&hellip;</div>
+    <button class="refresh-btn" id="refresh-btn">Recheck now</button>
+  </div>
+</header>
+<div id="unregistered-banner">
+  <span id="unregistered-banner-text"></span>
+  <button class="ignored-link" id="ignored-link" style="display:none;"></button>
+</div>
+<div id="offline-banner">⚠️ ライブ状態を取得できません。ターミナルで <code>pj-dashboard</code> を実行してサーバーモードで開いてください（このページを直接ファイルとして開いた場合は実測できません）。</div>
+
+<div class="grid" id="grid"></div>
+
+<script>
+const PROJECTS = __PROJECTS_JSON__;
+const DASH_PORT = __DASH_PORT__;
+const HOME_DIR = __HOME_DIR__;
+
+// projects.yml conventionally writes paths as "~/foo"; lsof's cwd always
+// comes back as the absolute "/Users/xxx/foo". Without normalizing these to
+// one form, the same directory looks like two unrelated things depending on
+// whether it came from a registered project or a live process.
+function shortenPath(p) {
+  if (!p) return p;
+  if (p === HOME_DIR) return '~';
+  if (p.startsWith(HOME_DIR + '/')) return '~' + p.slice(HOME_DIR.length);
+  return p;
+}
+
+const grid = document.getElementById('grid');
+
+// All ports that projects.yml already accounts for (web + db), so the
+// "unregistered" section below only shows genuinely unknown listeners.
+const KNOWN_PORTS = new Set();
+for (const p of PROJECTS) {
+  for (const port of p.web_ports) KNOWN_PORTS.add(port);
+  for (const port of p.data_ports) KNOWN_PORTS.add(port);
+}
+
+// Identities (a cwd path, or a command name when cwd is unknown) the user
+// has confirmed are not a project (Unity, Adobe helpers, rapportd, etc.) so
+// they stop drowning out an actually-forgotten project registration.
+// Dismissed by cwd/command rather than port (many ports are ephemeral /
+// re-assigned on every launch).
+const IGNORE_KEY = 'pj-dashboard-ignored-commands';
+function loadIgnored() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(IGNORE_KEY) || '[]'));
+  } catch (e) {
+    return new Set();
+  }
+}
+function saveIgnored(set) {
+  localStorage.setItem(IGNORE_KEY, JSON.stringify(Array.from(set)));
+}
+let ignoredIdentities = loadIgnored();
+
+const banner = document.getElementById('unregistered-banner');
+const bannerText = document.getElementById('unregistered-banner-text');
+const ignoredLink = document.getElementById('ignored-link');
+
+ignoredLink.addEventListener('click', () => {
+  if (!confirm(`無視リスト (${ignoredIdentities.size}件) をリセットしますか？`)) return;
+  ignoredIdentities = new Set();
+  saveIgnored(ignoredIdentities);
+  checkAll();
+});
+
+function el(tag, attrs, children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (k === 'class') e.className = v;
+    else if (k === 'text') e.textContent = v;
+    else e.setAttribute(k, v);
+  }
+  for (const c of children || []) e.appendChild(c);
+  return e;
+}
+
+for (const p of PROJECTS) {
+  const card = el('div', { class: 'card' });
+  card.appendChild(el('h2', { text: p.name }));
+  if (p.description) card.appendChild(el('p', { class: 'desc', text: p.description }));
+  if (p.path) card.appendChild(el('div', { class: 'path', text: p.path }));
+
+  if (p.tech && p.tech.length) {
+    const tech = el('div', { class: 'tech' });
+    for (const t of p.tech) tech.appendChild(el('span', { text: t }));
+    card.appendChild(tech);
+  }
+
+  const ports = el('div', { class: 'ports' });
+
+  for (const port of p.web_ports) {
+    const dot = el('span', { class: 'dot checking', 'data-port': port });
+    const badge = el('a', {
+      class: 'port-badge',
+      href: `http://localhost:${port}`,
+      target: '_blank',
+      rel: 'noopener',
+    }, [dot, document.createTextNode(':' + port)]);
+    ports.appendChild(badge);
+  }
+
+  for (const port of p.data_ports) {
+    const dbType = (p.db_types && p.db_types[port]) || 'db';
+    const dot = el('span', { class: 'dot checking', 'data-port': port });
+    ports.appendChild(el('span', { class: 'db-badge' }, [dot, document.createTextNode(`🗄️ ${dbType}:${port}`)]));
+  }
+
+  if (!p.web_ports.length && !p.data_ports.length) {
+    ports.appendChild(el('span', { class: 'none', text: 'no ports' }));
+  }
+
+  card.appendChild(ports);
+  grid.appendChild(card);
+}
+
+// Cards for processes that are still listening are kept and reused across
+// polls (only their process/ports rows are refreshed) instead of being torn
+// down and rebuilt every 5s -- rebuilding used to silently blow away an open
+// "➕ 登録" form (and anything typed into it) out from under the user mid-edit.
+const extraCardsByKey = new Map(); // key -> { card, group, processEl, portsEl }
+let lastListening = [];
+
+function dirBaseName(cwd) {
+  return cwd.split('/').filter(Boolean).pop() || cwd;
+}
+
+// Is this cwd the same directory as (or inside) an *already-registered*
+// project's path? If so this isn't a "new project?" candidate at all -- it's
+// almost certainly just another port of that same project (e.g. a second
+// dev-server port for `onlinemedic`) and should be merged into it, not left
+// sitting next to it looking like an unrelated duplicate.
+function findMatchingProject(cwd) {
+  if (!cwd) return null;
+  const short = shortenPath(cwd);
+  return PROJECTS.find((p) => p.path && (short === p.path || short.startsWith(p.path + '/'))) || null;
+}
+
+async function killPid(pid, button) {
+  button.disabled = true;
+  try {
+    const res = await fetch('/api/kill', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pid }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'failed');
+    return true;
+  } catch (e) {
+    alert('停止に失敗しました: ' + e.message);
+    button.disabled = false;
+    return false;
+  }
+}
+
+// Grouped by cwd when known -- several ports/pids sharing the same working
+// directory (e.g. a dev server + its HMR/websocket child process) are one
+// project candidate, not several unrelated ones. Falls back to grouping by
+// pid alone when cwd couldn't be resolved, since an empty cwd tells us
+// nothing about whether two such processes are actually related.
+function buildExtraCard(key) {
+  const card = el('div', { class: 'card extra-card' });
+  const headEl = el('div', { class: 'card-head' }, [el('h2', {})]);
+  const descEl = el('p', { class: 'desc', text: '⚠️ projects.yml に未登録' });
+  const matchEl = el('p', { class: 'match-note', style: 'display:none;' });
+  const pathEl = el('div', { class: 'path' });
+  const processEl = el('div', { class: 'process-list' });
+  const portsEl = el('div', { class: 'ports' });
+  card.appendChild(headEl);
+  card.appendChild(descEl);
+  card.appendChild(matchEl);
+  card.appendChild(pathEl);
+  card.appendChild(processEl);
+  card.appendChild(portsEl);
+
+  const formSlot = el('div');
+  const entry = { card, headEl, descEl, matchEl, pathEl, processEl, portsEl, formSlot, group: null, matchedProject: null };
+
+  const addToExistingBtn = el('button', { class: 'dismiss-card primary', style: 'display:none;' });
+  addToExistingBtn.addEventListener('click', async () => {
+    const target = entry.matchedProject;
+    if (!target) return;
+    const ports = Array.from(entry.group.processes.values()).flatMap((p) => p.ports);
+    if (!confirm(`ポート ${ports.join(', ')} を既存プロジェクト "${target.name}" に追加しますか？`)) return;
+    addToExistingBtn.disabled = true;
+    try {
+      const res = await fetch('/api/add-port', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: target.name, ports }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'failed');
+      location.reload();
+    } catch (e) {
+      alert('追加に失敗しました: ' + e.message);
+      addToExistingBtn.disabled = false;
+    }
+  });
+
+  const registerBtn = el('button', { class: 'dismiss-card', text: '➕ 新規として登録' });
+  registerBtn.addEventListener('click', () => {
+    if (formSlot.childElementCount) {
+      formSlot.innerHTML = '';
+      return;
+    }
+    formSlot.appendChild(buildRegisterForm(entry, formSlot));
+  });
+
+  const dismissBtn = el('button', { class: 'dismiss-card', text: '✕ 今後表示しない' });
+  dismissBtn.addEventListener('click', () => {
+    const identity = entry.group.cwd || Array.from(entry.group.processes.values())[0].command;
+    dismissBtn.title = `"${identity}" を今後表示しない`;
+    ignoredIdentities.add(identity);
+    saveIgnored(ignoredIdentities);
+    renderExtra(lastListening);
+  });
+
+  entry.addToExistingBtn = addToExistingBtn;
+  card.appendChild(el('div', { class: 'card-actions' }, [addToExistingBtn, registerBtn, dismissBtn]));
+  card.appendChild(formSlot);
+
+  return entry;
+}
+
+function refreshExtraCard(entry, group) {
+  entry.group = group;
+  const processes = Array.from(group.processes.values());
+  const title = group.cwd ? dirBaseName(group.cwd) : processes[0].command;
+
+  entry.headEl.querySelector('h2').textContent = title;
+  entry.pathEl.textContent = group.cwd ? shortenPath(group.cwd) : `pid ${processes[0].pid} (cwd不明)`;
+
+  entry.matchedProject = findMatchingProject(group.cwd);
+  if (entry.matchedProject) {
+    entry.matchEl.style.display = '';
+    entry.matchEl.textContent = `🔗 登録済みプロジェクト "${entry.matchedProject.name}" と同じディレクトリです`;
+    entry.addToExistingBtn.style.display = '';
+    entry.addToExistingBtn.textContent = `➕ ${entry.matchedProject.name} に追加`;
+  } else {
+    entry.matchEl.style.display = 'none';
+    entry.addToExistingBtn.style.display = 'none';
+  }
+
+  entry.processEl.innerHTML = '';
+  if (processes.length > 1 || !group.cwd) {
+    for (const proc of processes) {
+      const killBtn = el('button', { text: '✕', title: `${proc.command} (pid ${proc.pid}) を終了` });
+      killBtn.addEventListener('click', async () => {
+        if (!confirm(`"${proc.command}" (pid ${proc.pid}) にSIGTERMを送って終了しますか？`)) return;
+        if (await killPid(proc.pid, killBtn)) {
+          renderExtra(lastListening);
+        }
+      });
+      entry.processEl.appendChild(
+        el('span', { class: 'process-pill' }, [
+          document.createTextNode(`${proc.command} (pid ${proc.pid})`),
+          killBtn,
+        ])
+      );
+    }
+  }
+
+  entry.portsEl.innerHTML = '';
+  const allPorts = Array.from(new Set(processes.flatMap((p) => p.ports))).sort((a, b) => a - b);
+  for (const port of allPorts) {
+    entry.portsEl.appendChild(
+      el('a', { class: 'port-badge', href: `http://localhost:${port}`, target: '_blank', rel: 'noopener' }, [
+        el('span', { class: 'dot up' }),
+        document.createTextNode(':' + port),
+      ])
+    );
+  }
+
+  // Single-process cards still get the full command line + a one-click stop
+  // (multi-process cards show that per-pid in the process list above).
+  const existingCmdline = entry.card.querySelector('.cmdline');
+  if (existingCmdline) existingCmdline.remove();
+  if (processes.length === 1 && processes[0].cmdline) {
+    entry.pathEl.insertAdjacentElement(
+      'afterend',
+      el('div', { class: 'cmdline', text: processes[0].cmdline, title: processes[0].cmdline })
+    );
+  }
+}
+
+function renderExtra(listening) {
+  lastListening = listening;
+
+  const allUnknown = listening.filter((item) => item.port !== DASH_PORT && !KNOWN_PORTS.has(item.port));
+  const visible = allUnknown.filter(
+    (item) => !ignoredIdentities.has(item.command) && !(item.cwd && ignoredIdentities.has(item.cwd))
+  );
+  const hiddenCount = allUnknown.length - visible.length;
+
+  // Group by cwd when known (co-located processes are one project
+  // candidate); fall back to pid alone when cwd is unresolved.
+  const groups = new Map();
+  for (const item of visible) {
+    const key = item.cwd ? `cwd::${item.cwd}` : `pid::${item.command}::${item.pid}`;
+    if (!groups.has(key)) {
+      groups.set(key, { cwd: item.cwd, processes: new Map() });
+    }
+    const group = groups.get(key);
+    const procKey = `${item.command}::${item.pid}`;
+    if (!group.processes.has(procKey)) {
+      group.processes.set(procKey, { command: item.command, pid: item.pid, cmdline: item.cmdline, ports: [] });
+    }
+    group.processes.get(procKey).ports.push(item.port);
+  }
+
+  // Drop cards for processes that stopped listening since the last poll.
+  for (const [key, entry] of extraCardsByKey) {
+    if (!groups.has(key)) {
+      entry.card.remove();
+      extraCardsByKey.delete(key);
+    }
+  }
+
+  // Top banner: the whole point is to make "did I forget to register a
+  // project?" impossible to miss without scrolling past a wall of Unity /
+  // Adobe / system-helper noise.
+  if (groups.size > 0) {
+    banner.style.display = 'flex';
+    bannerText.textContent = `⚠️ projects.yml に未登録のプロセスが ${groups.size} 件 (${visible.length}ポート) 動作中です`;
+  } else {
+    banner.style.display = 'none';
+  }
+
+  if (hiddenCount > 0) {
+    ignoredLink.style.display = '';
+    ignoredLink.textContent = `無視中のプロセス ${hiddenCount}件 (リセット)`;
+  } else {
+    ignoredLink.style.display = 'none';
+  }
+
+  for (const [key, group] of groups) {
+    let entry = extraCardsByKey.get(key);
+    if (!entry) {
+      // Registered projects (already in the grid from page load) come
+      // first; unregistered ones are appended after them, last -- the
+      // banner above already makes them impossible to miss, so the day-to-
+      // day card order can prioritize the user's own known projects.
+      entry = buildExtraCard(key);
+      extraCardsByKey.set(key, entry);
+      grid.appendChild(entry.card);
+    }
+    // Process list + ports are refreshed on an existing card -- leaves any
+    // open registration form (and whatever the user typed into it) alone.
+    refreshExtraCard(entry, group);
+  }
+}
+
+// Inline "register into projects.yml" form for one unregistered-process
+// card. Reads from entry.group (always current) rather than a value
+// captured at button-creation time, and merges every port across every
+// process sharing this cwd into one project entry.
+function buildRegisterForm(entry, formSlot) {
+  const group = entry.group;
+  const processes = Array.from(group.processes.values());
+  const suggestedName = (group.cwd ? dirBaseName(group.cwd) : processes[0].command)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'project';
+  const allPorts = Array.from(new Set(processes.flatMap((p) => p.ports))).sort((a, b) => a - b);
+
+  const nameInput = el('input', { type: 'text', value: suggestedName, placeholder: 'project-name (小文字/数字/-/_)' });
+  const pathInput = el('input', { type: 'text', value: group.cwd ? shortenPath(group.cwd) : '', placeholder: 'path' });
+  const descInput = el('input', { type: 'text', placeholder: '説明 (任意)' });
+  const techInput = el('input', { type: 'text', placeholder: 'tech (カンマ区切り, 任意)' });
+  const errorEl = el('div', { class: 'error' });
+  const submitBtn = el('button', { class: 'dismiss-card primary', text: '登録する' });
+  const cancelBtn = el('button', { class: 'dismiss-card', text: 'キャンセル' });
+
+  submitBtn.addEventListener('click', async () => {
+    submitBtn.disabled = true;
+    errorEl.textContent = '';
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: nameInput.value,
+          path: pathInput.value,
+          description: descInput.value,
+          tech: techInput.value,
+          ports: allPorts,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'failed');
+      location.reload();
+    } catch (e) {
+      errorEl.textContent = '登録失敗: ' + e.message;
+      submitBtn.disabled = false;
+    }
+  });
+  cancelBtn.addEventListener('click', () => {
+    formSlot.innerHTML = '';
+  });
+
+  return el('div', { class: 'register-form' }, [
+    nameInput,
+    pathInput,
+    descInput,
+    techInput,
+    errorEl,
+    el('div', { class: 'card-actions' }, [submitBtn, cancelBtn]),
+  ]);
+}
+
+// Liveness is decided server-side (same lsof-based check as `check-ports`),
+// fetched fresh on every poll from a same-origin endpoint. This avoids the
+// false results a cross-origin browser fetch() gives for non-HTTP ports.
+async function checkAll() {
+  const dots = Array.from(document.querySelectorAll('.dot[data-port]'));
+  try {
+    const res = await fetch('/api/status', { cache: 'no-store' });
+    if (!res.ok) throw new Error('bad response');
+    const listening = await res.json();
+    const listeningPorts = new Set(listening.map((item) => item.port));
+
+    document.getElementById('offline-banner').style.display = 'none';
+    dots.forEach((d) => {
+      const port = Number(d.getAttribute('data-port'));
+      d.classList.remove('checking');
+      d.classList.toggle('up', listeningPorts.has(port));
+      d.classList.toggle('down', !listeningPorts.has(port));
+    });
+    const up = dots.filter((d) => d.classList.contains('up')).length;
+    document.getElementById('summary').innerHTML =
+      `<b>${up}</b> / ${dots.length} ports running (実測: lsof) &middot; last checked ${new Date().toLocaleTimeString('ja-JP')}`;
+
+    renderExtra(listening);
+  } catch (e) {
+    document.getElementById('offline-banner').style.display = 'block';
+    document.getElementById('summary').textContent = 'ライブチェック利用不可（サーバーモードで開いてください）';
+  }
+}
+
+document.getElementById('refresh-btn').addEventListener('click', checkAll);
+checkAll();
+setInterval(checkAll, 5000);
+</script>
+</body>
+</html>
+"""
+
+
+def render_html(entries, dash_port):
+    payload = json.dumps(entries, ensure_ascii=False).replace("</script>", "<\\/script>")
+    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return (
+        HTML_TEMPLATE.replace("__PROJECTS_JSON__", payload)
+        .replace("__GENERATED_AT__", generated_at)
+        .replace("__DASH_PORT__", str(dash_port))
+        .replace("__HOME_DIR__", json.dumps(HOME_DIR))
+    )
+
+
+def generate(dash_port=DEFAULT_PORT):
+    projects = load_projects()
+    entries = build_entries(projects)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    OUTPUT_FILE.write_text(render_html(entries, dash_port), encoding="utf-8")
+    return entries
+
+
+def make_handler():
+    class Handler(SimpleHTTPRequestHandler):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, directory=str(OUTPUT_DIR), **kwargs)
+
+        def do_GET(self):
+            if self.path == "/api/status":
+                listening = sorted(scan_listening().values(), key=lambda item: item["port"])
+                self._json_response(200, listening)
+                return
+            super().do_GET()
+
+        def do_POST(self):
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length else b"{}"
+            try:
+                payload = json.loads(raw or b"{}")
+            except json.JSONDecodeError:
+                payload = {}
+
+            if self.path == "/api/kill":
+                self._handle_kill(payload)
+            elif self.path == "/api/register":
+                self._handle_register(payload)
+            elif self.path == "/api/add-port":
+                self._handle_add_port(payload)
+            else:
+                self._json_response(404, {"ok": False, "error": "not found"})
+
+        def _json_response(self, status, obj):
+            body = json.dumps(obj).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _handle_kill(self, payload):
+            try:
+                pid = int(payload.get("pid"))
+            except (TypeError, ValueError):
+                return self._json_response(400, {"ok": False, "error": "invalid pid"})
+
+            # Only allow killing a pid that is *right now* one of the ports
+            # we ourselves reported as listening -- prevents a stale/spoofed
+            # pid in the request body from touching an unrelated process.
+            live_pids = {int(item["pid"]) for item in scan_listening().values()}
+            if pid not in live_pids:
+                return self._json_response(400, {"ok": False, "error": "pid is not a currently-listening process"})
+
+            try:
+                subprocess.run(["kill", "-TERM", str(pid)], timeout=3, check=True)
+            except Exception as e:
+                return self._json_response(500, {"ok": False, "error": str(e)})
+            self._json_response(200, {"ok": True})
+
+        def _handle_register(self, payload):
+            ok, error = register_project(payload)
+            if not ok:
+                return self._json_response(400, {"ok": False, "error": error})
+            generate(dash_port=self.server.server_address[1])
+            self._json_response(200, {"ok": True})
+
+        def _handle_add_port(self, payload):
+            name = str(payload.get("name", "")).strip()
+            try:
+                ports = sorted({int(p) for p in (payload.get("ports") or [])})
+            except (TypeError, ValueError):
+                return self._json_response(400, {"ok": False, "error": "invalid ports"})
+            if not name or not ports:
+                return self._json_response(400, {"ok": False, "error": "name and ports are required"})
+
+            ok, error = add_ports_to_project(name, ports)
+            if not ok:
+                return self._json_response(400, {"ok": False, "error": error})
+            generate(dash_port=self.server.server_address[1])
+            self._json_response(200, {"ok": True})
+
+        def log_message(self, fmt, *args):
+            pass  # keep stdout quiet
+
+    return Handler
+
+
+def serve(port):
+    entries = generate(dash_port=port)
+    print(f"✅ Dashboard generated: {OUTPUT_FILE} ({len(entries)} projects)")
+    TCPServer.allow_reuse_address = True
+    with TCPServer(("127.0.0.1", port), make_handler()) as httpd:
+        print(f"🌐 Serving on http://localhost:{port}/  (Ctrl-C to stop)")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--serve", action="store_true", help="serve with live status endpoint")
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    args = parser.parse_args()
+
+    if args.serve:
+        serve(args.port)
+    else:
+        entries = generate()
+        print(f"✅ Dashboard generated: {OUTPUT_FILE} ({len(entries)} projects)")
+
+
+if __name__ == "__main__":
+    main()
