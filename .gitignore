@@ -37,6 +37,8 @@
 /.claude/pending-prompt.txt
 /.claude/context/
 /.claude/sessions/
+# Playwright MCP browser profile (Chrome runtime/cache + browsing data)
+/.claude/playwright-mcp-profile/
 
 # Emacs elisp build/backup artifacts
 /.emacs.d/elisp/*.elc
