@@ -90,6 +90,19 @@ def build_entries(projects):
                     for db in (project.get("databases", []) or [])
                     if db.get("port")
                 },
+                # `always_on: true` marks a project the dashboard should treat
+                # as "must be running" -- it's badged, and warns (banner + red
+                # card) whenever none of its ports are listening. `can_start`
+                # says whether a one-click launch is possible (a start_command
+                # is configured); the command itself is never sent to the
+                # browser -- /api/start looks it up server-side by name.
+                "always_on": bool(project.get("always_on", False)),
+                "can_start": bool(str(project.get("start_command", "")).strip()),
+                # Sent to the browser only to prefill the ⚙ config form's
+                # edit field -- execution still goes through /api/start, which
+                # reads the command from projects.yml by name, never from the
+                # request. Safe: the dashboard binds 127.0.0.1 (single user).
+                "start_command": str(project.get("start_command", "") or ""),
             }
         )
     return entries
@@ -283,6 +296,158 @@ def add_ports_to_project(name, new_ports):
     return False, f'"{name}" has no `ports:` line to update'
 
 
+def _project_block_bounds(lines, name):
+    """Return (start, end) line indices of a project's YAML block: `start`
+    is the `  name:` line, `end` is the next top-level (2-space) project key
+    or len(lines). Returns (None, None) if the project isn't found."""
+    block_start_re = re.compile(r"^  " + re.escape(name) + r":\s*\n?$")
+    other_key_re = re.compile(r"^  [A-Za-z0-9_-]+:\s*\n?$")
+    start = None
+    for i, line in enumerate(lines):
+        if start is None:
+            if block_start_re.match(line):
+                start = i
+            continue
+        if other_key_re.match(line):
+            return start, i
+    return (start, len(lines)) if start is not None else (None, None)
+
+
+def _find_project_key_line(lines, start, end, indent, key):
+    """Index of a project-level `key:` line within (start, end), or None.
+    Matches only lines at exactly `indent` so a same-named nested key (e.g.
+    a database's `name:`) is never touched."""
+    key_re = re.compile(r"^(\s*)" + re.escape(key) + r":\s")
+    for i in range(start + 1, end):
+        m = key_re.match(lines[i])
+        if m and m.group(1) == indent:
+            return i
+    return None
+
+
+def set_project_config(name, always_on, start_command):
+    """Edit an already-registered project's `always_on` / `start_command`
+    from the dashboard's ⚙ config form.
+
+    always_on: True inserts/keeps `always_on: true`; False removes the line.
+    start_command: None leaves it untouched; "" removes the line; any other
+    string sets it (double-quoted). Done as targeted single-line inserts/
+    rewrites/deletes so the rest of the hand-maintained file -- comments,
+    blank lines, database blocks -- is left byte-for-byte intact. The whole
+    file is rolled back if the edit somehow produces invalid YAML."""
+    try:
+        existing = load_projects()
+    except Exception as e:
+        return False, f"could not read projects.yml: {e}"
+    if name not in existing:
+        return False, f'"{name}" is not a registered project'
+
+    original = PROJECTS_FILE.read_text()
+    lines = original.splitlines(keepends=True)
+    start, end = _project_block_bounds(lines, name)
+    if start is None:
+        return False, f'could not locate "{name}" block in projects.yml'
+
+    # Project-level indent = indent of the block's first child line.
+    indent = "    "
+    for line in lines[start + 1:end]:
+        m = re.match(r"^(\s+)\S", line)
+        if m and len(m.group(1)) > 2:
+            indent = m.group(1)
+            break
+
+    def anchor():
+        # Insert new keys right after `ports:` (or `path:`) to match the
+        # existing hand-written ordering; fall back to just after the header.
+        for key in ("ports", "path"):
+            idx = _find_project_key_line(lines, *_project_block_bounds(lines, name), indent, key)
+            if idx is not None:
+                return idx + 1
+        return _project_block_bounds(lines, name)[0] + 1
+
+    def upsert(key, value):
+        s, e = _project_block_bounds(lines, name)
+        idx = _find_project_key_line(lines, s, e, indent, key)
+        new_line = f"{indent}{key}: {value}\n"
+        if idx is not None:
+            lines[idx] = new_line
+        else:
+            lines.insert(anchor(), new_line)
+
+    def remove(key):
+        s, e = _project_block_bounds(lines, name)
+        idx = _find_project_key_line(lines, s, e, indent, key)
+        if idx is not None:
+            del lines[idx]
+
+    if always_on:
+        upsert("always_on", "true")
+    else:
+        remove("always_on")
+
+    if start_command is not None:
+        cmd = str(start_command).strip()
+        if cmd:
+            upsert("start_command", yaml_quote(cmd))
+        else:
+            remove("start_command")
+
+    PROJECTS_FILE.write_text("".join(lines))
+    try:
+        load_projects()
+    except Exception as e:
+        PROJECTS_FILE.write_text(original)  # roll back the whole file
+        return False, f"edit produced invalid YAML ({e}); rolled back, file unchanged"
+
+    return True, None
+
+
+def start_project(name):
+    """Launch a project's configured `start_command` from the dashboard's
+    "▶ 起動" button. Only the project *name* crosses from the browser; the
+    command itself is read from projects.yml here (never accepted from the
+    request body), so the page can't be tricked into running arbitrary shell.
+
+    The command is run detached (own session, no stdio) in the project's
+    directory so it keeps running independently of this HTTP request and of
+    the dashboard server. Note: the child inherits *this server's*
+    environment -- rich when started via `pj-dashboard` in a shell, minimal
+    under launchd -- so a start_command that needs PATH entries (node, uv,
+    docker...) should use absolute paths or `source` a profile itself.
+    """
+    try:
+        projects = load_projects()
+    except Exception as e:
+        return False, f"could not read projects.yml: {e}"
+
+    project = projects.get(name)
+    if not project:
+        return False, f'"{name}" is not a registered project'
+
+    command = str(project.get("start_command", "")).strip()
+    if not command:
+        return False, f'"{name}" has no start_command in projects.yml'
+
+    cwd = Path(str(project.get("path", "")).strip()).expanduser()
+    if not cwd.is_dir():
+        return False, f"path does not exist: {cwd}"
+
+    try:
+        subprocess.Popen(
+            command,
+            shell=True,
+            cwd=str(cwd),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception as e:
+        return False, str(e)
+
+    return True, None
+
+
 HTML_TEMPLATE = """<!doctype html>
 <html lang="ja">
 <head>
@@ -390,6 +555,31 @@ HTML_TEMPLATE = """<!doctype html>
     border: 1px dashed var(--down);
   }
   .card.extra-card .desc { color: var(--down); font-weight: 600; }
+  .card.always-down {
+    border-color: var(--down);
+    box-shadow: 0 0 0 1px var(--down) inset;
+  }
+  .always-badge {
+    background: var(--accent);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    white-space: nowrap;
+    align-self: center;
+  }
+  #alwayson-banner {
+    display: none;
+    max-width: 1100px;
+    margin: 0 auto 20px;
+    background: var(--down);
+    color: #fff;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+  }
   .match-note {
     color: var(--accent);
     font-size: 12px;
@@ -441,6 +631,14 @@ HTML_TEMPLATE = """<!doctype html>
     box-sizing: border-box;
   }
   .register-form .error { color: var(--down); font-size: 11px; }
+  .config-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: pointer;
+  }
   .card h2 {
     margin: 0 0 4px;
     font-size: 16px;
@@ -579,6 +777,7 @@ HTML_TEMPLATE = """<!doctype html>
     <button class="refresh-btn" id="refresh-btn">Recheck now</button>
   </div>
 </header>
+<div id="alwayson-banner"></div>
 <div id="unregistered-banner">
   <span id="unregistered-banner-text"></span>
   <button class="ignored-link" id="ignored-link" style="display:none;"></button>
@@ -653,9 +852,45 @@ function el(tag, attrs, children) {
   return e;
 }
 
+// always_on cards, wired up in the build loop below and updated every poll
+// by updateAlwaysOn() so a stopped "must be running" project shows red + a
+// one-click "▶ 起動".
+const alwaysOnCards = [];
+
+async function startProject(name, button) {
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = '起動中…';
+  try {
+    const res = await fetch('/api/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'failed');
+    // Give the process a moment to bind its port, then recheck so the card
+    // flips green on its own without the user having to hit "Recheck now".
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = original;
+      checkAll();
+    }, 2500);
+  } catch (e) {
+    alert('起動に失敗しました: ' + e.message);
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 for (const p of PROJECTS) {
   const card = el('div', { class: 'card' });
-  card.appendChild(el('h2', { text: p.name }));
+  const h2 = el('h2', { text: p.name });
+  if (p.always_on) {
+    card.appendChild(el('div', { class: 'card-head' }, [h2, el('span', { class: 'always-badge', text: '🔁 常駐' })]));
+  } else {
+    card.appendChild(h2);
+  }
   if (p.description) card.appendChild(el('p', { class: 'desc', text: p.description }));
   if (p.path) card.appendChild(el('div', { class: 'path', text: p.path }));
 
@@ -689,7 +924,123 @@ for (const p of PROJECTS) {
   }
 
   card.appendChild(ports);
+
+  const actions = el('div', { class: 'card-actions' });
+  const configSlot = el('div');
+
+  // "▶ 起動" only exists when always_on + a start_command is configured;
+  // updateAlwaysOn() toggles its visibility by liveness.
+  let startBtn = null;
+  if (p.always_on && p.can_start) {
+    startBtn = el('button', { class: 'dismiss-card primary', text: '▶ 起動', style: 'display:none;' });
+    startBtn.addEventListener('click', () => startProject(p.name, startBtn));
+    actions.appendChild(startBtn);
+  }
+
+  // ⚙ 設定 -- edit always_on / start_command right here (writes projects.yml).
+  const configBtn = el('button', { class: 'dismiss-card', text: '⚙ 設定' });
+  configBtn.addEventListener('click', () => {
+    if (configSlot.childElementCount) {
+      configSlot.innerHTML = '';
+      return;
+    }
+    configSlot.appendChild(buildConfigForm(p, configSlot));
+  });
+  actions.appendChild(configBtn);
+
+  card.appendChild(actions);
+  card.appendChild(configSlot);
+
+  if (p.always_on) alwaysOnCards.push({ project: p, card, startBtn });
+
   grid.appendChild(card);
+}
+
+// Inline ⚙ config editor for one project card: a 常駐 (always_on) checkbox
+// and a start_command field. Saving POSTs to /api/set-config, which does a
+// targeted edit of projects.yml, then the page reloads to reflect it.
+function buildConfigForm(p, slot) {
+  const alwaysCb = el('input', { type: 'checkbox', style: 'width:auto; margin:0;' });
+  if (p.always_on) alwaysCb.checked = true;
+  const alwaysLabel = el('label', {
+    class: 'config-check',
+  }, [alwaysCb, document.createTextNode(' 🔁 常時起動 (always_on)')]);
+
+  const cmdInput = el('input', {
+    type: 'text',
+    value: p.start_command || '',
+    placeholder: "start_command 例: zsh -lc 'npm run dev'",
+  });
+
+  const errorEl = el('div', { class: 'error' });
+  const saveBtn = el('button', { class: 'dismiss-card primary', text: '保存' });
+  const cancelBtn = el('button', { class: 'dismiss-card', text: 'キャンセル' });
+
+  saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    errorEl.textContent = '';
+    try {
+      const res = await fetch('/api/set-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: p.name,
+          always_on: alwaysCb.checked,
+          start_command: cmdInput.value,
+        }),
+      });
+      const data = await res.json();
+      if (!data.ok) throw new Error(data.error || 'failed');
+      location.reload();
+    } catch (e) {
+      errorEl.textContent = '保存失敗: ' + e.message;
+      saveBtn.disabled = false;
+    }
+  });
+  cancelBtn.addEventListener('click', () => {
+    slot.innerHTML = '';
+  });
+
+  return el('div', { class: 'register-form' }, [
+    alwaysLabel,
+    cmdInput,
+    errorEl,
+    el('div', { class: 'card-actions' }, [saveBtn, cancelBtn]),
+  ]);
+}
+
+// Called each poll: a "must be running" project counts as up if ANY of its
+// declared ports is listening. Down ones go red + surface their "▶ 起動"
+// button, and a single banner names them all. Projects flagged always_on but
+// with no ports can't be liveness-checked, so they just keep the launch
+// button available without ever being flagged down.
+function updateAlwaysOn(listeningPorts) {
+  const down = [];
+  for (const item of alwaysOnCards) {
+    const p = item.project;
+    const ports = [...p.web_ports, ...p.data_ports];
+    const hasPorts = ports.length > 0;
+    const up = ports.some((port) => listeningPorts.has(port));
+
+    if (hasPorts && up) {
+      item.card.classList.remove('always-down');
+      if (item.startBtn) item.startBtn.style.display = 'none';
+    } else {
+      if (hasPorts) {
+        item.card.classList.add('always-down');
+        down.push(p.name);
+      }
+      if (item.startBtn) item.startBtn.style.display = '';
+    }
+  }
+
+  const alwaysBanner = document.getElementById('alwayson-banner');
+  if (down.length) {
+    alwaysBanner.style.display = 'block';
+    alwaysBanner.textContent = `⛔ 常駐指定のプロジェクトが停止中: ${down.join(', ')}`;
+  } else {
+    alwaysBanner.style.display = 'none';
+  }
 }
 
 // Cards for processes that are still listening are kept and reused across
@@ -1010,6 +1361,7 @@ async function checkAll() {
     document.getElementById('summary').innerHTML =
       `<b>${up}</b> / ${dots.length} ports running (実測: lsof) &middot; last checked ${new Date().toLocaleTimeString('ja-JP')}`;
 
+    updateAlwaysOn(listeningPorts);
     renderExtra(listening);
   } catch (e) {
     document.getElementById('offline-banner').style.display = 'block';
@@ -1071,6 +1423,10 @@ def make_handler():
                 self._handle_register(payload)
             elif self.path == "/api/add-port":
                 self._handle_add_port(payload)
+            elif self.path == "/api/start":
+                self._handle_start(payload)
+            elif self.path == "/api/set-config":
+                self._handle_set_config(payload)
             else:
                 self._json_response(404, {"ok": False, "error": "not found"})
 
@@ -1119,6 +1475,29 @@ def make_handler():
                 return self._json_response(400, {"ok": False, "error": "name and ports are required"})
 
             ok, error = add_ports_to_project(name, ports)
+            if not ok:
+                return self._json_response(400, {"ok": False, "error": error})
+            generate(dash_port=self.server.server_address[1])
+            self._json_response(200, {"ok": True})
+
+        def _handle_start(self, payload):
+            name = str(payload.get("name", "")).strip()
+            if not name:
+                return self._json_response(400, {"ok": False, "error": "name is required"})
+            ok, error = start_project(name)
+            if not ok:
+                return self._json_response(400, {"ok": False, "error": error})
+            self._json_response(200, {"ok": True})
+
+        def _handle_set_config(self, payload):
+            name = str(payload.get("name", "")).strip()
+            if not name:
+                return self._json_response(400, {"ok": False, "error": "name is required"})
+            always_on = bool(payload.get("always_on", False))
+            # `start_command` absent -> leave untouched; present (even "") ->
+            # set/remove. The ⚙ form always sends it, so it's authoritative.
+            start_command = payload.get("start_command", None)
+            ok, error = set_project_config(name, always_on, start_command)
             if not ok:
                 return self._json_response(400, {"ok": False, "error": error})
             generate(dash_port=self.server.server_address[1])

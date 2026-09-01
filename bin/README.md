@@ -262,6 +262,19 @@ if (fixResult.success && fixResult.fixCount > 0) {
 
 `generate-project-dashboard` は `projects.yml` を元に、PC上で今動いているWebプロジェクトを一覧できるローカルダッシュボードを生成・配信するPythonスクリプト。実行中ポートの判定は `lsof`（`check-ports`/`port-scan` と同じ実測方式）、`projects.yml` 未登録のプロセスも`cwd`/コマンドラインから識別してカード表示し、その場で「既存プロジェクトに追加」「新規登録」「停止」ができる。
 
+**常駐指定プロジェクト（always_on）**: `projects.yml` のプロジェクトに `always_on: true` を付けると、「常に動かしておくべきプロジェクト」として扱われる。ダッシュボードは🔁常駐バッジを付け、そのプロジェクトのポートがどれもLISTENしていなければ**上部に赤バナー警告＋カードを赤ハイライト**する。さらに `start_command: "..."` を書いておくと、停止中のカードに「▶ 起動」ボタンが出て、ワンクリックでそのコマンドをプロジェクトの `path` ディレクトリで起動できる（`/api/start`。コマンド本体はブラウザには渡さず、サーバー側が `projects.yml` から名前で引く）。
+
+```yaml
+  myapp:
+    path: ~/myapp
+    ports: [3000]
+    always_on: true
+    start_command: "npm run dev"   # dashboard server の環境を継承するため、
+                                   # node/uv/docker等はフルパス or `source`推奨
+```
+
+> 注: launchd常駐サービス経由で配信している場合、`start_command` は最小限の環境（PATHが薄い）で実行される。`pj-dashboard` をシェルから起動した場合はそのシェルの環境を継承する。
+
 `install-dashboard-service` は、このダッシュボードサーバーを**ログイン時に自動起動する常駐サービス（launchd LaunchAgent）として登録**するための一回限りのセットアップスクリプト。
 
 ### 手順書（初回セットアップ）

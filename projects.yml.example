@@ -8,6 +8,15 @@ projects:
     ports: [3000, 3001]  # main app, api server, etc.
     description: "Short description"
     tech: [node, react, postgresql]  # optional
+    always_on: true                 # optional: mark as "must be running" --
+                                    #   the dashboard (pj-dashboard) badges it
+                                    #   🔁常駐 and warns (banner + red card)
+                                    #   whenever none of its ports are listening
+    start_command: "npm run dev"    # optional: enables the dashboard's "▶ 起動"
+                                    #   button; run in this project's `path`.
+                                    #   Inherits the dashboard server's env, so
+                                    #   use absolute paths (or `source` a profile)
+                                    #   if it needs node/uv/docker on PATH.
     databases:
       - name: main                    # Database identifier
         type: postgresql              # mysql | postgresql | sqlite | mongodb | redis
