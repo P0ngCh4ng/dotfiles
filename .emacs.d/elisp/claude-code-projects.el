@@ -97,6 +97,34 @@ Each entry is a cons cell (PROJECT-NAME . DIRECTORY)."
   :type 'file
   :group 'claude-code-projects)
 
+(defcustom claude-code-projects-cage-excluded-dirs
+  '("~/dotfiles")
+  "Directories (and their subdirectories) that never launch inside cage,
+even when `claude-code-projects-use-cage' is non-nil.
+
+Cage's sandbox denylists tools like `ps' and `launchctl' (they talk to
+the OS via XPC/mach ports cage blocks), but dotfiles is the project
+that manages cage's own config and installs launchd services -- so a
+session working on dotfiles itself regularly needs exactly those
+tools.  Excluding it here means that just works, without remembering
+to reach for `claude-raw' instead of `claude' every time."
+  :type '(repeat directory)
+  :group 'claude-code-projects)
+
+(defun claude-code-projects--dir-cage-excluded-p (directory)
+  "Non-nil if DIRECTORY is inside `claude-code-projects-cage-excluded-dirs'."
+  (let ((dir (file-name-as-directory (expand-file-name directory))))
+    (seq-some
+     (lambda (excluded)
+       (let ((excluded-dir (file-name-as-directory (expand-file-name excluded))))
+         (string-prefix-p excluded-dir dir)))
+     claude-code-projects-cage-excluded-dirs)))
+
+(defun claude-code-projects--cage-enabled-for-dir-p (directory)
+  "Non-nil if cage should be used to launch Claude Code in DIRECTORY."
+  (and claude-code-projects-use-cage
+       (not (claude-code-projects--dir-cage-excluded-p directory))))
+
 (defvar claude-code-projects-sessions nil
   "List of active Claude Code sessions.
 Each entry is a plist with keys:
@@ -107,12 +135,17 @@ Each entry is a plist with keys:
   :branch        Branch name (string) when `:worktree-p' is non-nil, else nil
   :created-at    Timestamp from `current-time'")
 
-(defun claude-code-projects--get-command ()
-  "Get the Claude Code launch command."
-  (if claude-code-projects-use-cage
-      (format "cage -config %s -preset claude-code -- bash -c 'env CLAUDE_CODE_DISABLE_ITERM2=1 claude --dangerously-skip-permissions'"
+(defun claude-code-projects--get-command (&optional directory)
+  "Get the Claude Code launch command for DIRECTORY (default `default-directory').
+CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 keeps output in the normal
+terminal buffer so vterm scrollback works (Claude Code 2.1.x switched
+to alternate-screen rendering, which leaves no scrollback).
+See `claude-code-projects-cage-excluded-dirs' for directories that
+always skip cage regardless of `claude-code-projects-use-cage'."
+  (if (claude-code-projects--cage-enabled-for-dir-p (or directory default-directory))
+      (format "cage -config %s -preset claude-code -- bash -c 'env CLAUDE_CODE_DISABLE_ITERM2=1 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 claude --dangerously-skip-permissions'"
               (shell-quote-argument (expand-file-name claude-code-projects-cage-config)))
-    "env CLAUDE_CODE_DISABLE_ITERM2=1 claude --dangerously-skip-permissions"))
+    "env CLAUDE_CODE_DISABLE_ITERM2=1 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 claude --dangerously-skip-permissions"))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Session helpers (plist-based)
@@ -486,7 +519,7 @@ Returns the registered session plist."
                             (if (get-buffer base-name)
                                 (generate-new-buffer-name base-name)
                               base-name)))
-           (command (claude-code-projects--get-command)))
+           (command (claude-code-projects--get-command expanded-dir)))
       ;; Use let-bindings for dynamic variables so Emacs restores them correctly
       ;; on non-local exit — no unwind-protect or manual save/restore needed.
       (let ((default-directory expanded-dir)
@@ -503,7 +536,7 @@ Returns the registered session plist."
             ;; which would wipe any buffer-local binding set before mode init.
             (setq-local vterm-buffer-name-string nil))
           (switch-to-buffer-other-window buffer-name)
-          (when claude-code-projects-use-cage
+          (when (claude-code-projects--cage-enabled-for-dir-p expanded-dir)
             (run-with-timer 1.5 nil
                             (lambda (dir buf-name)
                               (when-let ((b (get-buffer buf-name)))

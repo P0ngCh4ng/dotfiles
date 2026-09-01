@@ -448,6 +448,11 @@
 (use-package claude-code
   :ensure t
   :bind (("C-c C-c" . claude-code-transient))
+  :init
+  ;; Claude Code 2.1.x はデフォルトで alternate screen 描画になり、
+  ;; vterm のスクロールバックに過去ログが残らない。通常描画に戻す。
+  ;; Emacs から起動する全セッション（vterm経由）に継承される。
+  (setenv "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN" "1")
   :config
   ;; Optional: Set default model or other options
   ;; (setq claude-code-default-model "sonnet")

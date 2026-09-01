@@ -120,6 +120,7 @@ C-c C-l            # List all active sessions
   - Global directories: `.claude`, `.serena`, `.npm`, `.cache`, `.config`, `.volta`, etc.
 - **Toggle**: `M-x claude-code-toggle-cage` to enable/disable cage temporarily
 - **Nested cage detection**: Automatically prevents nested cage execution via `IN_CAGE` environment variable
+- **Per-directory exclusion**: `claude-code-projects-cage-excluded-dirs` (default: `("~/dotfiles")`) — sessions started (via `C-c C-p`/`C-c c`) in this directory or any subdirectory always launch *without* cage, regardless of `claude-code-projects-use-cage`. Reason: cage denylists `ps`/`launchctl` (XPC-based tools), but dotfiles is the project that manages cage's own config and installs launchd services, so it regularly needs exactly those tools. Applies only to the Emacs launch path (`claude-code-projects--get-command`); the `.zshrc` `claude` alias is unaffected — use `claude-raw` there for the same effect outside Emacs.
 
 **Main Workflow (Transient Menu - `C-c c`)**:
 ```
