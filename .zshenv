@@ -1,6 +1,5 @@
+export VOLTA_HOME="$HOME/.volta"
 export PATH="$HOME/homebrew/bin:$PATH"
 export ZPLUG_HOME="$HOME/.zplug"
-export VOLT_HOME="$HOME/.volta"
-export VOLTA_HOME="$HOME/.volta"
 export PATH="$VOLTA_HOME/bin:$PATH"
 export PATH="$HOME/.cargo/bin:$PATH"
