@@ -39,6 +39,9 @@
 /.claude/sessions/
 # Playwright MCP browser profile (Chrome runtime/cache + browsing data)
 /.claude/playwright-mcp-profile/
+# Local business-project working notes (private repo/domain details;
+# this dotfiles repo is public, so keep these out of it)
+/.claude/office-integration-instructions.md
 
 # Emacs elisp build/backup artifacts
 /.emacs.d/elisp/*.elc
