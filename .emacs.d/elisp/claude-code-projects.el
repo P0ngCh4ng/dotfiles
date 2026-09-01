@@ -571,18 +571,29 @@ falls back to `default-directory'."
            (condition-case nil (projectile-project-root) (error nil)))
       default-directory))
 
+(defun claude-code-projects--git-checked-out-branches (project-dir)
+  "Return branches already checked out in any worktree of PROJECT-DIR.
+This reflects live worktree state, unlike the static
+`claude-code-projects-protected-branches' list, so it correctly blocks
+projects whose primary branch is not named \"main\"/\"master\" (e.g. \"develop\")."
+  (delq nil
+        (mapcar (lambda (wt) (plist-get wt :branch))
+                (claude-code-projects--git-list-worktrees project-dir))))
+
 (defun claude-code-projects--read-branch-name (project-dir)
   "Read a branch name (existing or new) for PROJECT-DIR.
 Returns a cons (BRANCH . NEW-P) where NEW-P is non-nil when the branch
-should be created.  Signals `user-error' when branch is empty or in
+should be created.  Signals `user-error' when branch is empty, already
+checked out in another worktree, or in
 `claude-code-projects-protected-branches'."
   (let* ((existing (claude-code-projects--git-list-branches project-dir))
          (current (claude-code-projects--git-current-branch project-dir))
+         (checked-out (claude-code-projects--git-checked-out-branches project-dir))
          (new-marker "[+] Create new branch...")
          (choices (cons new-marker existing))
          (picked (completing-read
                   (format "Branch (current: %s): " (or current "?"))
-                  choices nil nil nil nil current))
+                  choices nil nil nil nil new-marker))
          (branch (if (string= picked new-marker)
                      (read-string "New branch name: ")
                    picked))
@@ -593,6 +604,10 @@ should be created.  Signals `user-error' when branch is empty or in
     (when (member branch claude-code-projects-protected-branches)
       (user-error
        "Branch `%s' is protected (in `claude-code-projects-protected-branches'); pick another"
+       branch))
+    (when (member branch checked-out)
+      (user-error
+       "Branch `%s' is already checked out in another worktree; pick another or create a new branch"
        branch))
     (cons branch new-p)))
 
