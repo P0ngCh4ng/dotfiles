@@ -438,6 +438,9 @@
   ;; claude-code-vterm-modeでも使えるように、vterm-mode-mapにcopy-modeキーバインドを追加
   ;; C-c C-tは claude-code がtransientメニューで使用しているため、C-c C-v を使用
   (define-key vterm-mode-map (kbd "C-c C-v") 'vterm-copy-mode)
+  ;; S-return で改行を挿入（bracketed pasteで送るとCLI側が送信トリガーとして扱わない）
+  (define-key vterm-mode-map (kbd "<S-return>")
+    (lambda () (interactive) (vterm-send-string "\n" t)))
   ;; Claude Codeのゴーストテキスト（未入力補完文字）を薄く表示
   ;; ANSIカラー8（bright black）= vterm-color-blackの:background
   (set-face-attribute 'vterm-color-black nil
