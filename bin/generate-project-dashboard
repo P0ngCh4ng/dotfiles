@@ -20,10 +20,10 @@ import json
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
-from http.server import SimpleHTTPRequestHandler
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from socketserver import TCPServer
 
 try:
     import yaml
@@ -446,6 +446,48 @@ def start_project(name):
         return False, str(e)
 
     return True, None
+
+
+def restart_project(name):
+    """Stop a project's currently-running app processes and start it again.
+
+    Only the project's *app* ports (web_ports) are targeted -- database
+    ports are left alone, so a restart never kills a shared DB container.
+    After SIGTERM-ing the owning pids we briefly wait for those ports to be
+    released (best-effort, up to ~6s) so the relaunch can rebind them
+    instead of failing with "address already in use", then reuse
+    start_project() to bring it back up.
+    """
+    try:
+        projects = load_projects()
+    except Exception as e:
+        return False, f"could not read projects.yml: {e}"
+
+    project = projects.get(name)
+    if not project:
+        return False, f'"{name}" is not a registered project'
+    if not str(project.get("start_command", "")).strip():
+        return False, f'"{name}" has no start_command in projects.yml'
+
+    web_ports, _ = classify_ports(project)
+    listening = scan_listening()
+    pids = sorted({int(listening[p]["pid"]) for p in web_ports if p in listening})
+
+    for pid in pids:
+        try:
+            subprocess.run(["kill", "-TERM", str(pid)], timeout=3)
+        except Exception:
+            pass
+
+    if web_ports and pids:
+        deadline = time.time() + 6
+        while time.time() < deadline:
+            live = scan_listening()
+            if not any(p in live for p in web_ports):
+                break
+            time.sleep(0.3)
+
+    return start_project(name)
 
 
 HTML_TEMPLATE = """<!doctype html>
@@ -883,6 +925,33 @@ async function startProject(name, button) {
   }
 }
 
+async function restartProject(name, button) {
+  if (!confirm(`"${name}" を再起動しますか？（動作中のアプリを停止して起動し直します。DBには触れません）`)) return;
+  const original = button.textContent;
+  button.disabled = true;
+  button.textContent = '再起動中…';
+  try {
+    const res = await fetch('/api/restart', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'failed');
+    // Restart stops then rebinds the port -- give it a bit longer than a
+    // cold start before rechecking so the dot doesn't flash red->green.
+    setTimeout(() => {
+      button.disabled = false;
+      button.textContent = original;
+      checkAll();
+    }, 3500);
+  } catch (e) {
+    alert('再起動に失敗しました: ' + e.message);
+    button.disabled = false;
+    button.textContent = original;
+  }
+}
+
 for (const p of PROJECTS) {
   const card = el('div', { class: 'card' });
   const h2 = el('h2', { text: p.name });
@@ -931,10 +1000,15 @@ for (const p of PROJECTS) {
   // "▶ 起動" only exists when always_on + a start_command is configured;
   // updateAlwaysOn() toggles its visibility by liveness.
   let startBtn = null;
+  let restartBtn = null;
   if (p.always_on && p.can_start) {
     startBtn = el('button', { class: 'dismiss-card primary', text: '▶ 起動', style: 'display:none;' });
     startBtn.addEventListener('click', () => startProject(p.name, startBtn));
     actions.appendChild(startBtn);
+    // Shown instead of ▶ 起動 while the project is running (see updateAlwaysOn).
+    restartBtn = el('button', { class: 'dismiss-card', text: '⟳ 再起動', style: 'display:none;' });
+    restartBtn.addEventListener('click', () => restartProject(p.name, restartBtn));
+    actions.appendChild(restartBtn);
   }
 
   // ⚙ 設定 -- edit always_on / start_command right here (writes projects.yml).
@@ -951,7 +1025,7 @@ for (const p of PROJECTS) {
   card.appendChild(actions);
   card.appendChild(configSlot);
 
-  if (p.always_on) alwaysOnCards.push({ project: p, card, startBtn });
+  if (p.always_on) alwaysOnCards.push({ project: p, card, startBtn, restartBtn });
 
   grid.appendChild(card);
 }
@@ -1023,14 +1097,18 @@ function updateAlwaysOn(listeningPorts) {
     const up = ports.some((port) => listeningPorts.has(port));
 
     if (hasPorts && up) {
+      // Running: offer restart, hide start.
       item.card.classList.remove('always-down');
       if (item.startBtn) item.startBtn.style.display = 'none';
+      if (item.restartBtn) item.restartBtn.style.display = '';
     } else {
+      // Down (or port-less, can't tell): offer start, hide restart.
       if (hasPorts) {
         item.card.classList.add('always-down');
         down.push(p.name);
       }
       if (item.startBtn) item.startBtn.style.display = '';
+      if (item.restartBtn) item.restartBtn.style.display = 'none';
     }
   }
 
@@ -1425,6 +1503,8 @@ def make_handler():
                 self._handle_add_port(payload)
             elif self.path == "/api/start":
                 self._handle_start(payload)
+            elif self.path == "/api/restart":
+                self._handle_restart(payload)
             elif self.path == "/api/set-config":
                 self._handle_set_config(payload)
             else:
@@ -1489,6 +1569,15 @@ def make_handler():
                 return self._json_response(400, {"ok": False, "error": error})
             self._json_response(200, {"ok": True})
 
+        def _handle_restart(self, payload):
+            name = str(payload.get("name", "")).strip()
+            if not name:
+                return self._json_response(400, {"ok": False, "error": "name is required"})
+            ok, error = restart_project(name)
+            if not ok:
+                return self._json_response(400, {"ok": False, "error": error})
+            self._json_response(200, {"ok": True})
+
         def _handle_set_config(self, payload):
             name = str(payload.get("name", "")).strip()
             if not name:
@@ -1512,8 +1601,9 @@ def make_handler():
 def serve(port):
     entries = generate(dash_port=port)
     print(f"✅ Dashboard generated: {OUTPUT_FILE} ({len(entries)} projects)")
-    TCPServer.allow_reuse_address = True
-    with TCPServer(("127.0.0.1", port), make_handler()) as httpd:
+    # Threaded so a slow request (a restart waits up to ~6s for ports to
+    # free) doesn't stall the page's every-5s /api/status polling.
+    with ThreadingHTTPServer(("127.0.0.1", port), make_handler()) as httpd:
         print(f"🌐 Serving on http://localhost:{port}/  (Ctrl-C to stop)")
         try:
             httpd.serve_forever()
