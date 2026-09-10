@@ -49,6 +49,16 @@
           }
         ],
         "description": "Load project context from projects.yml (enforces 00-session-start.md)"
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HOME/.claude/hooks/scripts/announce-managed-project.py\""
+          }
+        ],
+        "description": "Inject additionalContext so the session knows it is a projects.yml-managed project (ports, always_on, start_command, dashboard)"
       }
     ],
     "PostToolUse": [
