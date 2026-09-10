@@ -37,6 +37,14 @@
 /.claude/pending-prompt.txt
 /.claude/context/
 /.claude/sessions/
+# Claude Code background daemon / job runner runtime state
+/.claude/daemon/
+/.claude/daemon.log
+/.claude/jobs/
+# mod-tracker.json a hook writes relative to its cwd (any depth, incl. the
+# stray .claude/rules/.claude/context/ one)
+.claude/context/
+mod-tracker.json
 # Playwright MCP browser profile (Chrome runtime/cache + browsing data)
 /.claude/playwright-mcp-profile/
 # Local business-project working notes (private repo/domain details;
