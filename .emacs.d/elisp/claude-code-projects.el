@@ -98,7 +98,7 @@ Each entry is a cons cell (PROJECT-NAME . DIRECTORY)."
   :group 'claude-code-projects)
 
 (defcustom claude-code-projects-cage-excluded-dirs
-  '("~/dotfiles")
+  '("~/dotfiles" "~/dotfiles-worktrees")
   "Directories (and their subdirectories) that never launch inside cage,
 even when `claude-code-projects-use-cage' is non-nil.
 
@@ -107,7 +107,12 @@ the OS via XPC/mach ports cage blocks), but dotfiles is the project
 that manages cage's own config and installs launchd services -- so a
 session working on dotfiles itself regularly needs exactly those
 tools.  Excluding it here means that just works, without remembering
-to reach for `claude-raw' instead of `claude' every time."
+to reach for `claude-raw' instead of `claude' every time.
+
+`~/dotfiles-worktrees' is listed separately because git worktrees live
+*outside* the main repo dir (as `~/dotfiles-worktrees/<branch>'), so the
+`~/dotfiles' prefix does not cover them -- yet a dotfiles worktree needs
+the same denylisted tools as the main checkout."
   :type '(repeat directory)
   :group 'claude-code-projects)
 
