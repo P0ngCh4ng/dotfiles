@@ -444,7 +444,38 @@
   ;; Claude Codeのゴーストテキスト（未入力補完文字）を薄く表示
   ;; ANSIカラー8（bright black）= vterm-color-blackの:background
   (set-face-attribute 'vterm-color-black nil
-                      :background "#666666"))
+                      :background "#666666")
+
+  ;; --- vterm内のURL/画像パスをEmacsから開く ---
+  ;; 背景: vtermはターミナルなので、Claude Codeが出力するURLや画像パスは
+  ;;       ただのテキスト。ここで「ポイント位置の対象を開く」コマンドを足す。
+  ;;       URL → browse-url（デフォルトブラウザ）、ファイルパス → macOSの`open`。
+
+  ;; URLをハイライトしてクリック可能にする（copy-mode / マウスで有効）
+  (add-hook 'vterm-mode-hook #'goto-address-mode)
+
+  (defun my/vterm-open-at-point ()
+    "vterm内のポイント位置にあるURLまたはファイルパスを開く。
+URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライン表示する
+（画像なら`image-mode`で画像として描画される）。"
+    (interactive)
+    (require 'ffap)
+    (let* ((url  (or (thing-at-point 'url t)
+                     (get-text-property (point) 'shr-url)))
+           (raw  (ffap-file-at-point))
+           (path (and raw (expand-file-name raw))))
+      (cond
+       (url  (browse-url url))
+       ;; 実在ファイル → Emacs内の別ウィンドウで開く。
+       ;; 画像ファイルはimage-modeが自動で選ばれインライン描画される。q で閉じる。
+       ((and path (file-exists-p path))
+        (display-buffer (find-file-noselect path)))
+       (t (user-error "ポイント位置にURL/ファイルが見つかりません")))))
+
+  ;; copy-mode（C-c C-v）でカーソルを合わせて開く運用が確実
+  (with-eval-after-load 'vterm
+    (define-key vterm-copy-mode-map (kbd "C-c C-o") #'my/vterm-open-at-point)
+    (define-key vterm-mode-map      (kbd "C-c C-o") #'my/vterm-open-at-point)))
 
 ;; Claude Code integration (official package)
 ;; C-c C-c キー押下時に自動ロード
