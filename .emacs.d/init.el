@@ -622,8 +622,15 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
               (add-hook 'after-save-hook 'prettier t t))))
 
 
-(use-package python-mode
-  :ensure t)
+;; 組み込み python.el を使用する（外部 python-mode パッケージは
+;; メジャーモードを乗っ取り、モードラインが "Python3" になる・保存時に
+;; 勝手にコンパイルされる等の問題があるため不使用）。
+(use-package python
+  :ensure nil
+  :mode ("\\.py\\'" . python-mode)
+  :interpreter ("python3" . python-mode)
+  :custom
+  (python-shell-interpreter "python3"))
 
 (use-package haskell-mode
 
