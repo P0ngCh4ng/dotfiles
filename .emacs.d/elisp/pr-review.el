@@ -562,7 +562,7 @@ The parent is CURRENT, or CURRENT's parent if it is already narrowed, so
   (message "pr-review: target cleared"))
 
 (defconst pr-review--help-text
-  "PR レビュー: 選んだ PR / コミットの変更箇所だけを読む
+  "PR レビュー: 選んだ PR / コミットの変更箇所だけを、lsp でコードを辿りながら読む
 
   現在の対象: %s
 
@@ -583,12 +583,24 @@ The parent is CURRENT, or CURRENT's parent if it is already narrowed, so
   \\[pr-review-clear]	対象を解除してハイライトを消す
   \\[pr-review-help]	このヘルプ
 
+コードを読む（lsp が有効なバッファ: TypeScript など。init.el の lsp 設定）
+  M-.	定義へジャンプ（飛んだ先でも PR の変更行はハイライトされる）
+  M-,	ジャンプ元へ戻る
+  C-c d	カーソル下のシンボルのドキュメントをその場に表示
+  C-c D	定義を開かずに覗く（peek）
+  C-c r	参照箇所を一覧（peek）
+  C-c i	実装を辿る（インターフェース → 実装 / オーバーライド先）
+  C-c s	プロジェクト全体からシンボルを検索（helm）
+	  ※ lsp がエラーを出す箇所 = 存在しない API・型の不一致の疑い（AI コードで要確認）
+
 流れ
   1. 対象を選ぶ → どの経路で開いたファイルでも変更行がハイライトされる
        緑背景 = 追加/変更行、fringe の赤三角 = 削除のみの位置
   2. ファイル一覧で規模を把握
-  3. ファイルを開き、n で変更箇所を順に読む（lsp で飛んだ先もハイライトされる）
+  3. ファイルを開き、n で変更箇所を順に読む
      怪しい箇所は o で「変更前」を表示して比較
+     知らない関数・型は C-c d で説明を見る / C-c D で覗く / M-. で飛んで M-, で戻る
+     影響範囲は C-c r（参照）・C-c i（実装）で確認
   4. 「このファイルはOK」なら j → 未確認の次のファイルへ。迷ったらファイル一覧に戻る
      コミット単位で見たいときは コミットに絞り込み → 同じように j / ファイル一覧 → 戻る
   5. 行検索 / grep で横断して探す。終わったら対象を解除
@@ -596,6 +608,7 @@ The parent is CURRENT, or CURRENT's parent if it is already narrowed, so
 メモ
   - HEAD や作業ツリーとは無関係。対象はリポジトリごとに記憶される
   - 作業ツリーが対象の時点と違うファイルは、その時点の版を読み取り専用で開く
+    （その版では lsp が動かない。lsp で辿りたいときは PR ブランチを checkout する）
   - lock ファイルは巡回/行検索から除外（`pr-review-skip-files-regexp'）"
   "Body of `pr-review-help'; %s is replaced with the current target.")
 
