@@ -652,6 +652,10 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
 ;;   C-c v g   変更されたファイル全体を git grep
 ;;   C-c v d   対象の差分を magit で表示
 ;;   C-c v c   対象内のコミットを選んで、そのコミットだけを確認
+;;   C-c v n/p 次/前の変更箇所へ（ファイルをまたいで巡回。続けて n/p/o だけで操作可）
+;;   C-c v o   カーソル位置の変更箇所の「変更前」を表示/非表示
+;;   C-c v q   対象を解除してハイライトを消す
+;; 対象を選ぶと、どの経路で開いたファイルでも変更行がハイライトされる（pr-review-overlay.el）
 (use-package pr-review
   :ensure nil
   :load-path "elisp"
@@ -660,7 +664,11 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
          ("C-c v f" . pr-review-find-file)
          ("C-c v g" . pr-review-grep)
          ("C-c v d" . pr-review-show-diff)
-         ("C-c v c" . pr-review-commits)))
+         ("C-c v c" . pr-review-commits)
+         ("C-c v n" . pr-review-next-change)
+         ("C-c v p" . pr-review-previous-change)
+         ("C-c v o" . pr-review-toggle-original)
+         ("C-c v q" . pr-review-clear)))
 
 (use-package php-mode
 

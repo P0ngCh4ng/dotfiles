@@ -22,12 +22,16 @@
 ;;   pr-review-grep            変更されたファイル全体を git grep (TO 時点)
 ;;   pr-review-show-diff       対象の差分を magit で表示
 ;;   pr-review-commits         対象内のコミットを選び、そのコミットの変更行/ファイル/差分を確認
+;;   pr-review-clear           対象を解除してハイライトを消す
+;;
+;; 変更箇所のハイライトと巡回(n/p/o)は pr-review-overlay.el を参照。
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'subr-x)
 (require 'helm)
+(require 'pr-review-overlay)
 
 (declare-function magit-diff-range "magit-diff" (rev-or-range &optional args files))
 (declare-function magit-show-commit "magit-diff" (rev &optional args files module))
@@ -240,6 +244,7 @@ In magit buffers the commit at point is preselected."
                        :buffer "*helm pr-review select*")))
     (unless target (user-error "pr-review: Nothing selected"))
     (puthash root target pr-review--target-cache)
+    (pr-review-overlay-refresh-all)
     (message "pr-review: target = %s (%s..%s)" (plist-get target :label)
              (substring (plist-get target :from) 0 7) (substring (plist-get target :to) 0 7))
     target))
@@ -279,6 +284,8 @@ so LINE stays exact; otherwise open the working-tree file so lsp etc. work."
           (magit-find-file rev file)
           (message "pr-review: showing %s as of %s (read-only)" file (substring rev 0 7)))
       (find-file (expand-file-name file root))))
+  ;; 既に開いていたバッファは find-file-hook が走らないので、ここでハイライト
+  (unless pr-review--buffer-hunks (pr-review-overlay-apply))
   (goto-char (point-min))
   (forward-line (1- (cdr loc)))
   (recenter))
@@ -302,12 +309,36 @@ REV is passed to `pr-review--goto'."
                    :persistent-help "Preview")
         :buffer "*helm pr-review*"))
 
+(defvar pr-review--numstat nil
+  "PATH → (ADDED . DELETED) for the file list being shown.")
+
+(defun pr-review--numstat (from to)
+  "Return a hash table PATH → (ADDED . DELETED) for FROM..TO (binary: nil)."
+  (let ((table (make-hash-table :test #'equal)))
+    ;; -z --numstat: "ADDED\tDELETED\tPATH\0"
+    (dolist (rec (split-string (pr-review--diff "-z" "--numstat" from to) "\0" t))
+      (pcase-let ((`(,a ,d ,path) (split-string rec "\t")))
+        (puthash path (and (not (equal a "-")) (cons a d)) table)))
+    table))
+
+(defun pr-review--file-stat (path)
+  "Format the +/- line counts of PATH from `pr-review--numstat'."
+  (let ((stat (and pr-review--numstat (gethash path pr-review--numstat))))
+    (if stat
+        (concat (propertize (concat "+" (car stat)) 'face 'success) " "
+                (propertize (concat "-" (cdr stat)) 'face 'error))
+      (propertize "bin" 'face 'shadow))))
+
 (defun pr-review--helm-files (title root files rev)
-  "Pick one of FILES ((STATUS . PATH) ...) under TITLE; open it as of REV."
+  "Pick one of FILES ((STATUS . PATH) ...) under TITLE; open it as of REV.
+Bind `pr-review--numstat' around the call to show +/- counts."
   (unless files (user-error "pr-review: No changed files"))
   (helm :sources (helm-build-sync-source title
                    :candidates (mapcar (lambda (sf)
-                                         (cons (format "%s  %s" (car sf) (cdr sf)) (cdr sf)))
+                                         (cons (format "%s  %-7s  %s" (car sf)
+                                                       (pr-review--file-stat (cdr sf))
+                                                       (cdr sf))
+                                               (cdr sf)))
                                        files)
                    :candidate-number-limit 10000
                    :action (lambda (f) (pr-review--goto root (cons f 1) rev)))
@@ -352,7 +383,7 @@ REV is passed to `pr-review--goto'."
 (defun pr-review--line-candidates (lines)
   "Turn LINES ((FILE LINE TEXT) ...) into helm location candidates."
   (cl-loop for (file line text) in lines
-           unless (string-blank-p text)
+           unless (or (string-blank-p text) (pr-review--skip-file-p file))
            collect (cons (pr-review--format file line text) (cons file line))))
 
 (defun pr-review--changed-files (from to)
@@ -389,8 +420,9 @@ REV is passed to `pr-review--goto'."
   "Open one of the files changed by the target."
   (interactive)
   (pr-review--with-target (root from to label)
-    (pr-review--helm-files (format "Files: %s" label) root
-                           (pr-review--changed-files from to) to)))
+    (let ((pr-review--numstat (pr-review--numstat from to)))
+      (pr-review--helm-files (format "Files: %s" label) root
+                             (pr-review--changed-files from to) to))))
 
 ;;;###autoload
 (defun pr-review-grep (pattern)
@@ -462,13 +494,23 @@ Files are searched as of the target's last commit.  Unlike
                                                                 (plist-get c :from) h))))
                                  ("Open changed file" .
                                   ,(lambda (h)
-                                     (let ((c (pr-review--commit-target h)))
+                                     (let* ((c (pr-review--commit-target h))
+                                            (pr-review--numstat
+                                             (pr-review--numstat (plist-get c :from) h)))
                                        (pr-review--helm-files
                                         (format "Files: %s" (plist-get c :label)) root
                                         (pr-review--changed-files (plist-get c :from) h) h))))
                                  ("Show commit diff (magit)" .
                                   ,(lambda (h) (require 'magit) (magit-show-commit h)))))
             :buffer "*helm pr-review commits*"))))
+
+;;;###autoload
+(defun pr-review-clear ()
+  "Forget the current repository's review target and remove its highlighting."
+  (interactive)
+  (remhash (pr-review--root) pr-review--target-cache)
+  (pr-review-overlay-refresh-all)
+  (message "pr-review: target cleared"))
 
 (provide 'pr-review)
 ;;; pr-review.el ends here
