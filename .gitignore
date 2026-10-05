@@ -28,6 +28,7 @@
 /.emacs.d/kkcrc
 /.emacs.d/async-butecomp.log
 .emacs.d/network-security.data
+/.emacs.d/tree-sitter/
 /.emacs.d/init.el.backup.*
 
 # Claude Code local runtime state (not shareable, machine/session-specific)
