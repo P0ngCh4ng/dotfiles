@@ -23,6 +23,7 @@
 ;;   pr-review-show-diff       対象の差分を magit で表示
 ;;   pr-review-commits         対象内のコミットを選び、そのコミットの変更行/ファイル/差分を確認
 ;;   pr-review-clear           対象を解除してハイライトを消す
+;;   pr-review-help            キー一覧・レビューの流れ・現在の対象を表示
 ;;
 ;; 変更箇所のハイライトと巡回(n/p/o)は pr-review-overlay.el を参照。
 
@@ -511,6 +512,55 @@ Files are searched as of the target's last commit.  Unlike
   (remhash (pr-review--root) pr-review--target-cache)
   (pr-review-overlay-refresh-all)
   (message "pr-review: target cleared"))
+
+(defconst pr-review--help-text
+  "PR レビュー: 選んだ PR / コミットの変更箇所だけを読む
+
+  現在の対象: %s
+
+キー
+  \\[pr-review-select]	レビュー対象の PR / コミットを一覧から選ぶ
+  \\[pr-review-next-change]	次の変更箇所へ（ファイルをまたいで巡回）
+  \\[pr-review-previous-change]	前の変更箇所へ
+  \\[pr-review-toggle-original]	カーソル位置の変更箇所の「変更前」を表示/非表示
+	  ↑ n / p / o は実行直後なら単独キーで続けて押せる
+  \\[pr-review-search-changes]	変更された行だけを絞り込み検索してジャンプ
+  \\[pr-review-find-file]	変更ファイルを開く（+追加 -削除 の行数つき）
+  \\[pr-review-grep]	変更ファイル全体を git grep（対象の時点の内容）
+  \\[pr-review-show-diff]	差分全体を magit で表示
+  \\[pr-review-commits]	対象内のコミットを1つ選んで確認
+  \\[pr-review-clear]	対象を解除してハイライトを消す
+  \\[pr-review-help]	このヘルプ
+
+流れ
+  1. 対象を選ぶ → どの経路で開いたファイルでも変更行がハイライトされる
+       緑背景 = 追加/変更行、fringe の赤三角 = 削除のみの位置
+  2. ファイル一覧で規模を把握
+  3. 次の変更箇所へを押し続けて順に読む（lsp で飛んだ先もハイライトされる）
+     怪しい箇所は「変更前」を表示して比較
+  4. 行検索 / grep で横断して探す
+  5. 終わったら対象を解除
+
+メモ
+  - HEAD や作業ツリーとは無関係。対象はリポジトリごとに記憶される
+  - 作業ツリーが対象の時点と違うファイルは、その時点の版を読み取り専用で開く
+  - lock ファイルは巡回/行検索から除外（`pr-review-skip-files-regexp'）"
+  "Body of `pr-review-help'; %s is replaced with the current target.")
+
+;;;###autoload
+(defun pr-review-help ()
+  "Show pr-review keys, the review flow and the current target."
+  (interactive)
+  (let* ((root (ignore-errors (pr-review--root)))
+         (target (and root (gethash root pr-review--target-cache)))
+         (current (if target
+                      (format "%s (%s..%s)" (plist-get target :label)
+                              (substring (plist-get target :from) 0 7)
+                              (substring (plist-get target :to) 0 7))
+                    "なし（まず対象を選ぶ）")))
+    (with-help-window "*pr-review help*"
+      (with-current-buffer standard-output
+        (insert (format (substitute-command-keys pr-review--help-text) current))))))
 
 (provide 'pr-review)
 ;;; pr-review.el ends here

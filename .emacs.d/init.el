@@ -655,6 +655,7 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
 ;;   C-c v n/p 次/前の変更箇所へ（ファイルをまたいで巡回。続けて n/p/o だけで操作可）
 ;;   C-c v o   カーソル位置の変更箇所の「変更前」を表示/非表示
 ;;   C-c v q   対象を解除してハイライトを消す
+;;   C-c v ?   キー一覧・レビューの流れ・現在の対象を表示
 ;; 対象を選ぶと、どの経路で開いたファイルでも変更行がハイライトされる（pr-review-overlay.el）
 (use-package pr-review
   :ensure nil
@@ -668,7 +669,8 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
          ("C-c v n" . pr-review-next-change)
          ("C-c v p" . pr-review-previous-change)
          ("C-c v o" . pr-review-toggle-original)
-         ("C-c v q" . pr-review-clear)))
+         ("C-c v q" . pr-review-clear)
+         ("C-c v ?" . pr-review-help)))
 
 (use-package php-mode
 
