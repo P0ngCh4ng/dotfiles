@@ -576,8 +576,7 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
          ("\\.twig\\'" . web-mode)
          ("\\.vue\\'" . web-mode)
          ("\\.js\\'" . web-mode)
-         ("\\.ts\\'" . web-mode)
-         ("\\.tsx\\'" . web-mode)
+         ;; .ts / .tsx は typescript-ts-mode / tsx-ts-mode に委譲（下記参照）
          ("\\.blade\\.php\\'" . web-mode)
          ("\\.phtml\\'" . web-mode))
 
@@ -593,6 +592,56 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
   (web-mode-style-padding 1)
   (web-mode-script-padding 1)
   )
+
+;; ---------------------------------------------------------------------------
+;; TypeScript: AIが書いたコードを「読んで理解する」ための設定
+;;   - 定義へジャンプ / 存在しないAPIの検出 → lsp-mode + typescript-language-server
+;;   - 関数・クラスの説明をその場で表示          → lsp-ui-doc (ホバー) / eldoc
+;;   - シンボルの横断検索                        → helm-lsp
+;; tree-sitterベースの typescript-ts-mode / tsx-ts-mode を使用（Emacs 30, 高精度）
+;; ---------------------------------------------------------------------------
+
+;; tree-sitter文法の取得先。未インストールなら初回のみ自動ビルド
+;; （git と C コンパイラが必要。~/.emacs.d/tree-sitter/ に保存され以降は再利用）
+(when (fboundp 'treesit-available-p)
+  (setq treesit-language-source-alist
+        '((typescript "https://github.com/tree-sitter/tree-sitter-typescript" "master" "typescript/src")
+          (tsx        "https://github.com/tree-sitter/tree-sitter-typescript" "master" "tsx/src")))
+  (dolist (lang '(typescript tsx))
+    (unless (treesit-language-available-p lang)
+      (ignore-errors (treesit-install-language-grammar lang)))))
+
+(use-package typescript-ts-mode
+  :ensure nil  ;; Emacs 30 組み込み
+  :mode (("\\.ts\\'"  . typescript-ts-mode)
+         ("\\.tsx\\'" . tsx-ts-mode))
+  :hook ((typescript-ts-mode . lsp-deferred)
+         (tsx-ts-mode        . lsp-deferred)
+         (typescript-ts-mode . prettier-js-mode)
+         (tsx-ts-mode        . prettier-js-mode))
+  :custom
+  (typescript-ts-mode-indent-offset 2))
+
+;; helm利用環境なので、シンボル横断検索もhelmに統一
+(use-package helm-lsp
+  :ensure t
+  :after (lsp-mode helm)
+  :commands helm-lsp-workspace-symbol)
+
+;; コードリーディング用キーバインド（lsp-mode有効時のみ）
+;;   M-.  定義へジャンプ         (xref, デフォルト)
+;;   M-,  戻る                   (xref, デフォルト)
+;;   C-c d   ポイント下のシンボルのドキュメントをその場に表示
+;;   C-c D   定義を開かずに覗く（peek）
+;;   C-c r   参照箇所を一覧
+;;   C-c i   実装を辿る（インターフェース→実装クラス / オーバーライド先）
+;;   C-c s   プロジェクト全体からシンボルを検索（helm）
+(with-eval-after-load 'lsp-mode
+  (define-key lsp-mode-map (kbd "C-c d") #'lsp-ui-doc-glance)
+  (define-key lsp-mode-map (kbd "C-c D") #'lsp-ui-peek-find-definitions)
+  (define-key lsp-mode-map (kbd "C-c r") #'lsp-ui-peek-find-references)
+  (define-key lsp-mode-map (kbd "C-c i") #'lsp-ui-peek-find-implementations)
+  (define-key lsp-mode-map (kbd "C-c s") #'helm-lsp-workspace-symbol))
 
 (use-package php-mode
 
