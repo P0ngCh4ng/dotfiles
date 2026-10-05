@@ -95,7 +95,12 @@ Return (EXIT-CODE . OUTPUT)."
                                  (format "%s/main" pr-review-remote)
                                  (format "%s/master" pr-review-remote)
                                  "main" "master"))))
-    (or (cl-find-if #'pr-review--ref-exists-p candidates)
+    ;; origin/HEAD がPR作業ブランチを指していて main と履歴が繋がっていない
+    ;; リポジトリもあるため、HEAD と共通祖先を持つ候補だけを採用する
+    (or (cl-find-if (lambda (ref)
+                      (and (pr-review--ref-exists-p ref)
+                           (pr-review--git-string "merge-base" ref "HEAD")))
+                    candidates)
         (user-error "pr-review: Could not detect base branch; run M-x pr-review-set-base"))))
 
 (defun pr-review--base (root)
@@ -107,7 +112,12 @@ Return (EXIT-CODE . OUTPUT)."
   "Return the merge-base commit between HEAD and the base ref of ROOT."
   (let ((base (pr-review--base root)))
     (or (pr-review--git-string "merge-base" base "HEAD")
-        (user-error "pr-review: No merge-base between %s and HEAD" base))))
+        ;; キャッシュが古い(ブランチ切替・ref削除など)場合は一度だけ再推定
+        (let ((fresh (progn (remhash root pr-review--base-cache)
+                            (pr-review--base root))))
+          (pr-review--git-string "merge-base" fresh "HEAD"))
+        (user-error "pr-review: No merge-base between %s and HEAD; run M-x pr-review-set-base"
+                    base))))
 
 (defun pr-review--untracked-files ()
   "Return untracked, non-ignored files relative to the repository root."
