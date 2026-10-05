@@ -245,6 +245,7 @@ FILE is relative to ROOT.  Returns nil otherwise."
     (define-key map "n" #'pr-review-next-change)
     (define-key map "p" #'pr-review-previous-change)
     (define-key map "o" #'pr-review-toggle-original)
+    (define-key map "j" #'pr-review-next-file)
     map)
   "Keys that stay active right after a pr-review change command.")
 
@@ -292,7 +293,7 @@ Search backward (the change before POS) unless FORWARD."
       (user-error "pr-review: No %s change" (if forward "next" "previous")))
     (pcase-let ((`(,file . ,hunk) (nth idx changes)))
       (pr-review--goto root (cons file (plist-get hunk :line)) (plist-get target :to))
-      (message "pr-review [%d/%d] %s:%d  +%d -%d   (n/p: move, o: original)"
+      (message "pr-review [%d/%d] %s:%d  +%d -%d   (n/p: move, o: original, j: next file)"
                (1+ idx) (length changes) file (plist-get hunk :line)
                (plist-get hunk :count) (plist-get hunk :old-count))))
   (set-transient-map pr-review-change-repeat-map))
@@ -308,6 +309,62 @@ Search backward (the change before POS) unless FORWARD."
   "Jump to the previous change of the review target, crossing files."
   (interactive)
   (pr-review--move-change nil))
+
+;;; ---------------------------------------------------------------------------
+;;; Viewed files ("このファイルはOK") and file-level navigation
+;;; ---------------------------------------------------------------------------
+
+(defvar pr-review--viewed (make-hash-table :test #'equal)
+  "(ROOT FROM TO) → list of files marked as viewed.")
+
+(defun pr-review--viewed-p (root from to file)
+  "Return non-nil if FILE is marked as viewed for FROM..TO of ROOT."
+  (member file (gethash (list root from to) pr-review--viewed)))
+
+(defun pr-review--set-viewed (root from to file flag)
+  "Mark FILE as viewed for FROM..TO of ROOT if FLAG, else unmark it."
+  (let* ((key (list root from to))
+         (others (remove file (gethash key pr-review--viewed))))
+    (puthash key (if flag (cons file others) others) pr-review--viewed)))
+
+(defun pr-review--review-files (from to)
+  "Files of FROM..TO that change navigation visits, in diff order."
+  (cl-remove-if #'pr-review--skip-file-p
+                (mapcar #'car (pr-review--target-hunks from to))))
+
+(defun pr-review--first-change-line (from to file)
+  "Return the line of FILE's first change in FROM..TO (1 if none)."
+  (or (plist-get (cadr (assoc file (pr-review--target-hunks from to))) :line) 1))
+
+;;;###autoload
+(defun pr-review-next-file ()
+  "Mark the current file as viewed and go to the next file not yet viewed.
+Files are visited in diff order, wrapping around."
+  (interactive)
+  (let* ((root (pr-review--root))
+         (default-directory root)
+         (target (or (gethash root pr-review--target-cache)
+                     (user-error "pr-review: No target; run C-c v v first")))
+         (from (plist-get target :from))
+         (to (plist-get target :to))
+         (files (or (pr-review--review-files from to)
+                    (user-error "pr-review: Target has no textual changes")))
+         (current (car (pr-review--current-position root)))
+         (idx (or (cl-position current files :test #'equal) -1)))
+    (when (member current files)
+      (pr-review--set-viewed root from to current t))
+    ;; 現在のファイルの次から一周して、未確認の最初のファイルを探す
+    (let ((next (cl-find-if-not (lambda (f) (pr-review--viewed-p root from to f))
+                                (append (nthcdr (1+ idx) files)
+                                        (cl-subseq files 0 (max idx 0)))))
+          (viewed (cl-count-if (lambda (f) (pr-review--viewed-p root from to f)) files)))
+      (if (null next)
+          (message "pr-review: All %d files viewed 🎉 (C-c v f: file list, C-c v u: back up)"
+                   (length files))
+        (pr-review--goto root (cons next (pr-review--first-change-line from to next)) to)
+        (message "pr-review file %d/%d (%d viewed) %s   (j: next file, n/p: change)"
+                 (1+ (cl-position next files :test #'equal)) (length files) viewed next))))
+  (set-transient-map pr-review-change-repeat-map))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Original (removed) lines

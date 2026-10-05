@@ -648,10 +648,11 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
 ;; （未選択で他のコマンドを実行した場合も選択から始まる）
 ;;   C-c v v   レビュー対象のPR/コミットを選ぶ（magit上ではポイントのコミットを選択済み）
 ;;   C-c v s   変更された行だけを絞り込み検索してジャンプ
-;;   C-c v f   変更されたファイルを開く
+;;   C-c v f   変更ファイル一覧（拠点）: ✓確認済みの管理、今のファイルを選択済み
 ;;   C-c v g   変更されたファイル全体を git grep
 ;;   C-c v d   対象の差分を magit で表示
-;;   C-c v c   対象内のコミットを選んで、そのコミットだけを確認
+;;   C-c v c   対象内のコミットを選んで、対象をそのコミットに絞り込む（C-c v u で戻る）
+;;   C-c v j   このファイルを確認済みにして、未確認の次のファイルへ
 ;;   C-c v n/p 次/前の変更箇所へ（ファイルをまたいで巡回。続けて n/p/o だけで操作可）
 ;;   C-c v o   カーソル位置の変更箇所の「変更前」を表示/非表示
 ;;   C-c v q   対象を解除してハイライトを消す
@@ -669,6 +670,8 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
          ("C-c v n" . pr-review-next-change)
          ("C-c v p" . pr-review-previous-change)
          ("C-c v o" . pr-review-toggle-original)
+         ("C-c v j" . pr-review-next-file)
+         ("C-c v u" . pr-review-up)
          ("C-c v q" . pr-review-clear)
          ("C-c v ?" . pr-review-help)))
 
