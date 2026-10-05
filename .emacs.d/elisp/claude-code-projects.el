@@ -540,16 +540,11 @@ Returns the registered session plist."
             ;; because define-derived-mode calls kill-all-local-variables first,
             ;; which would wipe any buffer-local binding set before mode init.
             (setq-local vterm-buffer-name-string nil))
+          ;; cwd は vterm が default-directory で起動するので cd は送らない。
+          ;; (以前は起動1.5秒後に "cd DIR" + RET を送っていたが、vterm の中は
+          ;;  シェルではなく Claude Code 本体なので、その RET が信頼ダイアログの
+          ;;  既定選択 "No, exit" を確定させて終了していた)
           (switch-to-buffer-other-window buffer-name)
-          (when (claude-code-projects--cage-enabled-for-dir-p expanded-dir)
-            (run-with-timer 1.5 nil
-                            (lambda (dir buf-name)
-                              (when-let ((b (get-buffer buf-name)))
-                                (with-current-buffer b
-                                  (require 'vterm)
-                                  (vterm-send-string (format "cd \"%s\"" dir))
-                                  (vterm-send-return))))
-                            expanded-dir buffer-name))
           (let ((session (claude-code-projects--make-session
                           project buffer-name expanded-dir worktree-p branch)))
             (claude-code-projects--register-session session)
