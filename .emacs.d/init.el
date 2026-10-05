@@ -643,6 +643,24 @@ URLはブラウザ、ファイルはEmacsの隣のウィンドウにインライ
   (define-key lsp-mode-map (kbd "C-c i") #'lsp-ui-peek-find-implementations)
   (define-key lsp-mode-map (kbd "C-c s") #'helm-lsp-workspace-symbol))
 
+;; PRレビュー: プロジェクト全体ではなく「このPRで変わった部分」だけを検索
+;; 比較範囲は merge-base(ベースブランチ, HEAD) → 作業ツリー（未コミット・未追跡も含む）
+;;   C-c v s   変更された行だけを絞り込み検索してジャンプ
+;;   C-c v f   変更されたファイルを開く
+;;   C-c v g   変更されたファイル全体を git grep
+;;   C-c v d   PR全体の差分を magit で表示
+;;   C-c v c   PR内のコミットを選んで、そのコミットだけを確認（magit上ではポイントのコミットを選択済み）
+;;   C-c v b   ベースブランチを手動指定（空入力で自動検出し直し）
+(use-package pr-review
+  :ensure nil
+  :load-path "elisp"
+  :bind (("C-c v s" . pr-review-search-changes)
+         ("C-c v f" . pr-review-find-file)
+         ("C-c v g" . pr-review-grep)
+         ("C-c v d" . pr-review-show-diff)
+         ("C-c v c" . pr-review-commits)
+         ("C-c v b" . pr-review-set-base)))
+
 (use-package php-mode
 
   )
