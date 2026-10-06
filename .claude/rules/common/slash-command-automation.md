@@ -313,6 +313,18 @@ Task({
 
 ---
 
+### `/issue-review` Command
+
+**Skill**: `~/.claude/skills/issue-review-flow/SKILL.md`（必ず読み込んで従う）
+
+**Agents**:
+1. **`code-reviewer` agent** (Phase 2) - ブランチ差分 `origin/<base>...HEAD` をレビュー。CRITICAL/HIGH は自動修正 → 再レビュー（最大3周）
+2. Playwright MCP (Phase 3) - 受け入れ条件の動作確認
+
+**Gate**: Phase 4 の手動確認でユーザ OK を得るまでマージ禁止。マージは `gh pr merge --merge --delete-branch`
+
+---
+
 ### Custom Commands with `multi-` Prefix
 
 **Any command starting with `multi-`** (e.g., `/multi-api`, `/multi-plan-vue-laravel`) signals multi-agent workflow.
