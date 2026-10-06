@@ -175,7 +175,7 @@ M-x claude-code-edit-projects     # Customize project list
 1. `C-c C-p` (claude-code-select-project) でプロジェクト選択
 2. "Create new session" を選択
 3. "Create git worktree for this session? (y/n)" → `y`
-4. ブランチ名を入力（新規 or 既存）
+4. ブランチを選択（新規 / ローカル / リモート `origin/xxx`）— 一覧表示前に `git fetch --all --prune` が走り、リモートのみのブランチを選ぶと追跡ブランチとして作成される（`claude-code-projects-fetch-before-worktree` で無効化可）
 5. 自動的に `~/project-name-branch` ディレクトリが作成される
 6. そのディレクトリでClaude Codeセッションが起動
 

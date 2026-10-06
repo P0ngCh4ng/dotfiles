@@ -18,6 +18,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 
 ;; claude-codeパッケージをロード（遅延ロード対応）
 (require 'claude-code nil t)
@@ -407,6 +408,13 @@ into a parallel worktree because the main repo already holds it."
   :type '(repeat string)
   :group 'claude-code-projects)
 
+(defcustom claude-code-projects-fetch-before-worktree t
+  "When non-nil, run `git fetch --all --prune' before listing branches.
+This makes freshly pushed remote branches selectable when creating a
+worktree.  Fetch failures (e.g. offline) are reported but not fatal."
+  :type 'boolean
+  :group 'claude-code-projects)
+
 (defun claude-code-projects--git-available-p ()
   "Return non-nil when the `git' executable is on PATH."
   (and (executable-find "git") t))
@@ -442,6 +450,43 @@ OUTPUT-STRING contains both stdout and stderr."
               dir "branch" "--format=%(refname:short)")))
     (when (zerop (car res))
       (split-string (cdr res) "\n" t "[[:space:]]+"))))
+
+(defun claude-code-projects--git-fetch (dir)
+  "Run `git fetch --all --prune' in DIR.
+Returns non-nil on success; on failure only shows a message, so an
+offline machine can still create worktrees from already-known refs."
+  (message "Fetching remote branches...")
+  (let ((res (claude-code-projects--git-call dir "fetch" "--all" "--prune")))
+    (if (zerop (car res))
+        (progn (message "Fetching remote branches...done") t)
+      (message "git fetch failed (using cached remote refs): %s"
+               (string-trim (cdr res)))
+      nil)))
+
+(defun claude-code-projects--git-list-remote-branches (dir)
+  "Return remote-tracking branches in DIR as a list of (REF . LOCAL-NAME).
+REF is e.g. \"origin/feature/x\" and LOCAL-NAME is \"feature/x\".
+Symbolic refs such as \"origin/HEAD\" are excluded."
+  (let ((remotes (let ((r (claude-code-projects--git-call dir "remote")))
+                   (and (zerop (car r))
+                        (split-string (cdr r) "\n" t "[[:space:]]+"))))
+        (res (claude-code-projects--git-call
+              dir "for-each-ref" "--format=%(refname)%09%(symref)"
+              "refs/remotes")))
+    (when (zerop (car res))
+      (delq nil
+            (mapcar
+             (lambda (line)
+               (pcase-let ((`(,refname ,symref) (split-string line "\t")))
+                 (when (and (string-empty-p (or symref ""))
+                            (string-prefix-p "refs/remotes/" refname))
+                   (let* ((ref (substring refname (length "refs/remotes/")))
+                          (remote (seq-find
+                                   (lambda (rm) (string-prefix-p (concat rm "/") ref))
+                                   remotes)))
+                     (when remote
+                       (cons ref (substring ref (1+ (length remote)))))))))
+             (split-string (cdr res) "\n" t))))))
 
 (defun claude-code-projects--git-list-worktrees (dir)
   "Return list of worktrees for the repo containing DIR.
@@ -482,13 +527,21 @@ primary worktree (the first entry returned by git)."
          (not (string-empty-p (string-trim (cdr res)))))))
 
 (defun claude-code-projects--git-add-worktree (repo-dir target-path branch
-                                                        &optional new-branch-p)
+                                                        &optional new-branch-p
+                                                        remote-ref)
   "Create a worktree at TARGET-PATH for BRANCH in REPO-DIR.
-When NEW-BRANCH-P is non-nil, create BRANCH from current HEAD.
+When REMOTE-REF (e.g. \"origin/foo\") is non-nil, create BRANCH as a
+local branch tracking it.  Otherwise, when NEW-BRANCH-P is non-nil,
+create BRANCH from current HEAD.
 Signals `user-error' on failure with git's stderr."
-  (let* ((args (if new-branch-p
-                   (list "worktree" "add" "-b" branch target-path)
-                 (list "worktree" "add" target-path branch)))
+  (let* ((args (cond
+                (remote-ref
+                 (list "worktree" "add" "--track" "-b" branch
+                       target-path remote-ref))
+                (new-branch-p
+                 (list "worktree" "add" "-b" branch target-path))
+                (t
+                 (list "worktree" "add" target-path branch))))
          (res (apply #'claude-code-projects--git-call repo-dir args)))
     (unless (zerop (car res))
       (user-error "git worktree add failed: %s" (string-trim (cdr res))))
@@ -613,23 +666,34 @@ projects whose primary branch is not named \"main\"/\"master\" (e.g. \"develop\"
                 (claude-code-projects--git-list-worktrees project-dir))))
 
 (defun claude-code-projects--read-branch-name (project-dir)
-  "Read a branch name (existing or new) for PROJECT-DIR.
-Returns a cons (BRANCH . NEW-P) where NEW-P is non-nil when the branch
-should be created.  Signals `user-error' when branch is empty, already
-checked out in another worktree, or in
-`claude-code-projects-protected-branches'."
+  "Read a branch name (existing local, remote, or new) for PROJECT-DIR.
+Remote-tracking branches without a local counterpart are offered as
+\"<remote>/<name>\" candidates (after an optional fetch, see
+`claude-code-projects-fetch-before-worktree').
+Returns a plist (:branch BRANCH :new-p NEW-P :remote-ref REF).  NEW-P is
+non-nil when BRANCH should be created from HEAD; REF is non-nil when
+BRANCH should be created tracking that remote branch.  Signals
+`user-error' when branch is empty, already checked out in another
+worktree, or in `claude-code-projects-protected-branches'."
+  (when claude-code-projects-fetch-before-worktree
+    (claude-code-projects--git-fetch project-dir))
   (let* ((existing (claude-code-projects--git-list-branches project-dir))
+         (remote-only (seq-remove
+                       (lambda (rb) (member (cdr rb) existing))
+                       (claude-code-projects--git-list-remote-branches
+                        project-dir)))
          (current (claude-code-projects--git-current-branch project-dir))
          (checked-out (claude-code-projects--git-checked-out-branches project-dir))
          (new-marker "[+] Create new branch...")
-         (choices (cons new-marker existing))
+         (choices (append (list new-marker) existing (mapcar #'car remote-only)))
          (picked (completing-read
                   (format "Branch (current: %s): " (or current "?"))
                   choices nil nil nil nil new-marker))
-         (branch (if (string= picked new-marker)
-                     (read-string "New branch name: ")
-                   picked))
-         (new-p (and (string= picked new-marker) t)))
+         (remote (assoc picked remote-only))
+         (new-p (and (string= picked new-marker) t))
+         (branch (cond (new-p (read-string "New branch name: "))
+                       (remote (cdr remote))
+                       (t picked))))
     (when (or (null branch) (string-empty-p (string-trim branch)))
       (user-error "Branch name is empty"))
     (setq branch (string-trim branch))
@@ -641,7 +705,10 @@ checked out in another worktree, or in
       (user-error
        "Branch `%s' is already checked out in another worktree; pick another or create a new branch"
        branch))
-    (cons branch new-p)))
+    (when (and new-p (member branch existing))
+      (user-error "Branch `%s' already exists locally; pick it from the list instead"
+                  branch))
+    (list :branch branch :new-p new-p :remote-ref (car remote))))
 
 (defun claude-code-projects--resolve-target-path (project-dir branch)
   "Compute the worktree target path, prompting if it collides on disk.
@@ -672,12 +739,14 @@ Performs cage registration when `claude-code-projects-use-cage' is non-nil."
    ((not (y-or-n-p "Create git worktree for this session? "))
     nil)
    (t
-    (pcase-let* ((`(,branch . ,new-p)
-                  (claude-code-projects--read-branch-name project-dir))
-                 (target
-                  (claude-code-projects--resolve-target-path project-dir branch)))
+    (let* ((choice (claude-code-projects--read-branch-name project-dir))
+           (branch (plist-get choice :branch))
+           (target
+            (claude-code-projects--resolve-target-path project-dir branch)))
       ;; git worktree add (clean up cage entry on failure to avoid drift).
-      (claude-code-projects--git-add-worktree project-dir target branch new-p)
+      (claude-code-projects--git-add-worktree
+       project-dir target branch
+       (plist-get choice :new-p) (plist-get choice :remote-ref))
       (when claude-code-projects-use-cage
         (condition-case err
             (claude-code-projects--cage-add-worktree-path target)
