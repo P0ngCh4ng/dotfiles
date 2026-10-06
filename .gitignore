@@ -60,3 +60,6 @@ mod-tracker.json
 # Generated project dashboard (machine-specific, regenerated from projects.yml)
 /.dashboard/
 /bin/__pycache__/
+
+# Anthropic skills auto-synced from the claude.ai account (not hand-written)
+/.claude/skills/synced/
