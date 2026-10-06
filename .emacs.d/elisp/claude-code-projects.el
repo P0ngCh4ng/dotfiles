@@ -130,6 +130,29 @@ the same denylisted tools as the main checkout."
   (and claude-code-projects-use-cage
        (not (claude-code-projects--dir-cage-excluded-p directory))))
 
+(defcustom claude-code-projects-cage-update-script "~/dotfiles/bin/update-cage-config"
+  "Script that regenerates the cage config from the project registry."
+  :type 'file
+  :group 'claude-code-projects)
+
+(defun claude-code-projects--cage-sync ()
+  "Regenerate the cage config from the project registry before a launch.
+A project added to projects.yml (by hand or via the dashboard) stays
+read-only to caged sessions until the config is regenerated; doing it
+on every launch means that can no longer be forgotten.  An mtime check
+is not enough: adding a worktree rewrites the config, making it look
+newer than a registry edit it never picked up.  The script takes ~0.1s
+and preserves the worktree marker block.
+Failure only warns: launching with the old allowlist beats not launching."
+  (let ((script (expand-file-name claude-code-projects-cage-update-script))
+        ;; call-process fails in a TRAMP default-directory; the script is local.
+        (default-directory (expand-file-name "~/")))
+    (when (file-executable-p script)
+      (with-temp-buffer
+        (unless (eq 0 (call-process script nil t))
+          (display-warning 'claude-code-projects
+                           (format "update-cage-config failed:\n%s" (buffer-string))))))))
+
 (defvar claude-code-projects-sessions nil
   "List of active Claude Code sessions.
 Each entry is a plist with keys:
@@ -147,10 +170,16 @@ terminal buffer so vterm scrollback works (Claude Code 2.1.x switched
 to alternate-screen rendering, which leaves no scrollback).
 See `claude-code-projects-cage-excluded-dirs' for directories that
 always skip cage regardless of `claude-code-projects-use-cage'."
-  (if (claude-code-projects--cage-enabled-for-dir-p (or directory default-directory))
-      (format "cage -config %s -preset claude-code -- bash -c 'env CLAUDE_CODE_DISABLE_ITERM2=1 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 claude --dangerously-skip-permissions'"
-              (shell-quote-argument (expand-file-name claude-code-projects-cage-config)))
-    "env CLAUDE_CODE_DISABLE_ITERM2=1 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 claude --dangerously-skip-permissions"))
+  (let ((dir (or directory default-directory)))
+    (if (claude-code-projects--cage-enabled-for-dir-p dir)
+        (format "cage -config %s -preset claude-code%s -- bash -c 'env CLAUDE_CODE_DISABLE_ITERM2=1 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 claude --dangerously-skip-permissions'"
+                (shell-quote-argument (expand-file-name claude-code-projects-cage-config))
+                ;; A worktree's index/objects/refs live in the *main* repo's
+                ;; .git (outside the worktree dir), so without -allow-git
+                ;; every git write (add/commit/stash/rebase) is denied.  Only
+                ;; passed inside a repo: elsewhere cage prints a warning.
+                (if (locate-dominating-file dir ".git") " -allow-git" ""))
+      "env CLAUDE_CODE_DISABLE_ITERM2=1 CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 claude --dangerously-skip-permissions")))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Session helpers (plist-based)
@@ -524,7 +553,10 @@ Returns the registered session plist."
                             (if (get-buffer base-name)
                                 (generate-new-buffer-name base-name)
                               base-name)))
-           (command (claude-code-projects--get-command expanded-dir)))
+           (command (progn
+                      (when (claude-code-projects--cage-enabled-for-dir-p expanded-dir)
+                        (claude-code-projects--cage-sync))
+                      (claude-code-projects--get-command expanded-dir))))
       ;; Use let-bindings for dynamic variables so Emacs restores them correctly
       ;; on non-local exit — no unwind-protect or manual save/restore needed.
       (let ((default-directory expanded-dir)

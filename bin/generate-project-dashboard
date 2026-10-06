@@ -246,6 +246,24 @@ def register_project(payload):
     return True, None
 
 
+def sync_cage_config():
+    """Regenerate the cage allowlist from projects.yml. Returns None on
+    success, else a warning string. Without this a newly registered project
+    stays read-only to caged sessions until someone runs `make update-cage`
+    (Emacs also re-syncs on every caged launch, so a failure here is not fatal)."""
+    try:
+        subprocess.run([str(DOTFILES_DIR / "bin" / "update-cage-config")],
+                       check=True, capture_output=True, text=True, timeout=30)
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or "").strip()
+        sys.stderr.write(f"update-cage-config failed:\n{detail}\n")
+        return f"cage config update failed ({detail.splitlines()[-1] if detail else e}) -- run `make update-cage`"
+    except Exception as e:
+        sys.stderr.write(f"update-cage-config failed: {e}\n")
+        return f"cage config update failed ({e}) -- run `make update-cage`"
+    return None
+
+
 def add_ports_to_project(name, new_ports):
     """Add port(s) to an *already-registered* project's `ports:` line.
 
@@ -1543,7 +1561,8 @@ def make_handler():
             if not ok:
                 return self._json_response(400, {"ok": False, "error": error})
             generate(dash_port=self.server.server_address[1])
-            self._json_response(200, {"ok": True})
+            warning = sync_cage_config()
+            self._json_response(200, {"ok": True, "warning": warning} if warning else {"ok": True})
 
         def _handle_add_port(self, payload):
             name = str(payload.get("name", "")).strip()

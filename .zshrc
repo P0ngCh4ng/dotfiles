@@ -212,7 +212,14 @@ alias ..='cd ..'
 alias ...='cd ../..'
 alias ....='cd ../../..'
 # Claude Code aliases
-alias claude='CLAUDE_CODE_DISABLE_ITERM2=1 cage -config "$HOME/.config/cage/presets.yaml" claude --dangerously-skip-permissions'  # With Cage wrapper
+# With Cage wrapper. -allow-git (only inside a repo) lets git write to the
+# main repo's .git, which a worktree's index/objects/refs live in.
+unalias claude 2>/dev/null  # was an alias before; a re-source would otherwise fail
+claude() {
+    local -a git_flag
+    git rev-parse --git-common-dir &>/dev/null && git_flag=(-allow-git)
+    CLAUDE_CODE_DISABLE_ITERM2=1 cage -config "$HOME/.config/cage/presets.yaml" "${git_flag[@]}" claude --dangerously-skip-permissions "$@"
+}
 alias claude-raw='~/.local/bin/claude --dangerously-skip-permissions'  # Direct Claude Code (no Cage)
 zplug 'zsh-users/zsh-autosuggestions'
 zplug 'zsh-users/zsh-completions'

@@ -116,6 +116,8 @@ C-c C-l            # List all active sessions
 - **Allowed paths** (auto-generated from projects.yml):
   - All projects: dotfiles, pon, SOKKO, ChatClinic, onlinemedic, hojocon, AutomationVideo
   - Global directories: `.claude`, `.serena`, `.npm`, `.cache`, `.config`, `.volta`, etc.
+- **Git in worktrees**: a worktree's index/objects/refs live in the *main* repo's `.git`, outside the worktree dir. Both launch paths (Emacs `--get-command`, `.zshrc` `claude` function) pass `cage -allow-git` when inside a repo so git writes work. See `.claude/docs/reports/2026-10-06-worktree-cage-git.md`.
+- **Auto-sync**: every caged Emacs launch runs `bin/update-cage-config` first, and the dashboard's register button does too — a project added to `projects.yml` is writable without remembering `make update-cage`. Sandbox profiles are fixed at process start: already-running sessions need a restart to pick up allowlist changes.
 - **Toggle**: `M-x claude-code-toggle-cage` to enable/disable cage temporarily
 - **Nested cage detection**: Automatically prevents nested cage execution via `IN_CAGE` environment variable
 - **Per-directory exclusion**: `claude-code-projects-cage-excluded-dirs` (default: `("~/dotfiles")`) — sessions started (via `C-c C-p`/`C-c c`) in this directory or any subdirectory always launch *without* cage, regardless of `claude-code-projects-use-cage`. Reason: cage denylists `ps`/`launchctl` (XPC-based tools), but dotfiles is the project that manages cage's own config and installs launchd services, so it regularly needs exactly those tools. Applies only to the Emacs launch path (`claude-code-projects--get-command`); the `.zshrc` `claude` alias is unaffected — use `claude-raw` there for the same effect outside Emacs.
