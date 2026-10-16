@@ -84,6 +84,12 @@
       }
     ]
   },
+  "claudeMdExcludes": [
+    "/Users/pongchang/dotfiles-*/.claude/CLAUDE.md",
+    "/Users/pongchang/dotfiles-*/.claude/rules/**",
+    "/Users/pongchang/dotfiles-worktrees/*/.claude/CLAUDE.md",
+    "/Users/pongchang/dotfiles-worktrees/*/.claude/rules/**"
+  ],
   "model": "opus",
   "enableAllProjectMcpServers": true,
   "enabledPlugins": {
