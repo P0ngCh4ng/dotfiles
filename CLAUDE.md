@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```
 
 - Priority: `00-*.md` > `common/*.md`; `dotfiles/*.md` overrides common for this repo.
-- Hooks (in `.claude/settings.json`): `enforce-session-start.js` (project context from `projects.yml`), `announce-managed-project.py` (ports/DB/always_on/start_command of the current project), `enforce-agent-launch.js` (reminds `code-reviewer` after Edit/Write, 5-min cooldown), plus doc-tracking and the daily dashboard.
+- Hooks (in `.claude/settings.json`): `enforce-session-start.js` (project context from `projects.yml`), `announce-managed-project.py` (ports/DB/always_on/start_command of the current project; launches start_command for `auto_start` projects when their ports are down), `enforce-agent-launch.js` (reminds `code-reviewer` after Edit/Write, 5-min cooldown), plus doc-tracking and the daily dashboard.
 - **Instruction size limit (150k chars total)**: keep rules terse — tables over prose, details in skills/docs. `claudeMdExcludes` in `settings.json` skips `.claude/rules/**` and `.claude/CLAUDE.md` inside dotfiles worktrees (`~/dotfiles-*/`, `~/dotfiles-worktrees/*/`) because they duplicate `~/.claude`. Edits to rules made in a worktree only take effect after merging to main.
 
 ## Repository Structure
@@ -76,7 +76,7 @@ Multiple sessions on one repo would fight over git, so each new session can get 
 This repo owns the central project registry `projects.yml`, its template, and the shell functions around it.
 
 - **Add a project**: edit `projects.yml` → `make update-cage` (or `make deploy`).
-- Per-project details (ports, DB, always_on, start_command) live only in `projects.yml`; the `announce-managed-project.py` SessionStart hook injects them into each session. Rules: `~/.claude/rules/common/project-management.md`.
+- Per-project details (ports, DB, always_on, auto_start, start_command) live only in `projects.yml`; the `announce-managed-project.py` SessionStart hook injects them into each session. Rules: `~/.claude/rules/common/project-management.md`.
 - Functions: `port-scan`, `pj-info [name]`, `check-ports`, and the `db-*` family in `db.zsh` — see `~/.claude/rules/dotfiles/database-management.md` for commands, password env vars and the `databases:` schema, and `~/.claude/skills/db-management/SKILL.md` for implementation.
 - When changing these functions, test against the real `projects.yml`; keep `projects.yml.example` simple and documented.
 
